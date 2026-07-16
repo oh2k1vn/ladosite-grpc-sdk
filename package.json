@@ -1,0 +1,50 @@
+{
+  "name": "@ladosite/grpc-sdk",
+  "version": "1.0.0",
+  "description": "Standalone gRPC SDK for OptiFlow outsource projects",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "Protos"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate-proto.js",
+    "build": "tsup",
+    "prebuild": "npm run generate",
+    "typecheck": "tsc --noEmit",
+    "verify": "tsx tests/verify.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "grpc",
+    "sdk",
+    "optiflow"
+  ],
+  "author": "Ladosite",
+  "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@protobuf-ts/grpcweb-transport": "^2.11.1",
+    "@protobuf-ts/runtime": "^2.11.1",
+    "@protobuf-ts/runtime-rpc": "^2.11.1"
+  },
+  "devDependencies": {
+    "@protobuf-ts/plugin": "^2.11.1",
+    "@types/node": "^20.11.0",
+    "protoc": "^24.4.0",
+    "tsup": "^8.0.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}
