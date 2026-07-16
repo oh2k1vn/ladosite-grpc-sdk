@@ -13,7 +13,7 @@ Thư viện gRPC SDK chứa các gRPC Client được biên dịch sẵn từ c�
 ## 🛠 Cài đặt & Sử dụng
 
 ### 1. Trong dự án Next.js (Consumer)
-Cài đặt thư viện (sau khi đã publish private NPM hoặc dùng local link):
+Cài đặt thư viện từ NPM Registry:
 ```bash
 npm install @ladosite/grpc-sdk
 ```
@@ -78,13 +78,13 @@ npm run verify
 
 ---
 
-## 📦 Quy trình Publish lên Private NPM
-Có các cách sau để phân phối SDK này cho các dự án Next.js khác:
+## 📦 Quy trình Publish lên NPM Registry
+Thư viện được cấu hình để publish dưới dạng **public scoped package** mặc định.
 
-### Cách 1: Sử dụng Private Registry (npmjs.com, GitHub, GitLab...)
-Cấu hình `.npmrc` để trỏ scope `@ladosite` về Registry nội bộ của bạn, sau đó chạy:
+### Cách 1: Publish thông thường
+Đảm bảo bạn đã đăng nhập và có quyền ghi đối với scope `@ladosite`:
 ```bash
-npm publish --access restricted
+npm publish
 ```
 
 ### Cách 2: Sử dụng Git URL trực tiếp (Không cần NPM Registry)
