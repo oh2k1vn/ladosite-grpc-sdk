@@ -23,8 +23,8 @@ Khởi tạo SDK (ví dụ tại `src/lib/grpc.ts` của dự án Next.js):
 import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
 
 export const grpcSDK = new OptiFlowGrpcSDK({
-  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn',
-  orgId: process.env.OPTIFLOW_ORG_ID || '8581da5384b349e68575dfb8',
+  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://xxxx.xxxx.vn',
+  orgId: process.env.OPTIFLOW_ORG_ID || 'xxxxxxxxxxxxxxxx',
   debug: process.env.NODE_ENV === 'development',
 });
 ```
