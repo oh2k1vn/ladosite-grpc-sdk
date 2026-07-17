@@ -1,0 +1,19 @@
+{
+  "customerName": "Nguyen Van A",
+  "email": "a@example.com",
+  "phone": "0900000000",
+  "shippingAddress": "123 ABC Street",
+  "paymentMethod": "COD",
+  "note": "Giao giờ hành chính",
+  "sessionId": "session-xyz",
+  "items": [
+    {
+      "productId": "prod-001",
+      "variantId": "var-001",
+      "qty": 1
+    }
+  ],
+  "voucherCode": "",
+  "shippingFee": 30000,
+  "shippingCarrierPref": "GHTK"
+}

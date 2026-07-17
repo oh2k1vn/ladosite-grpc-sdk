@@ -1,0 +1,10 @@
+{
+  "url": "https://optiflow.vn/products",
+  "action": "click",
+  "elementId": "buy-now-btn",
+  "sessionId": "session-xyz",
+  "userAgent": "Mozilla/5.0 ...",
+  "ipAddress": "127.0.0.1",
+  "referrer": "https://google.com",
+  "metadataJson": "{\"category\":\"conversion\"}"
+}

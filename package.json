@@ -21,7 +21,7 @@
     "build": "tsup",
     "prebuild": "npm run generate",
     "typecheck": "tsc --noEmit",
-    "verify": "tsx tests/verify.ts",
+    "playground": "tsx playground/test-cli.ts",
     "prepare": "npm run build"
   },
   "keywords": [

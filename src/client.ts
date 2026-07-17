@@ -13,21 +13,15 @@ import { SeoServiceClient } from './generated/Protos/seo.client';
 import { TrackingServiceClient } from './generated/Protos/tracking.client';
 import { UserSubmitServiceClient } from './generated/Protos/user_submit.client';
 
-// Import request and response types
-import type { LoginRequest, LoginResponse } from './generated/Protos/auth';
-import type { CommonQuery, GetBySlugRequest, GetBySlugPagedRequest, Empty, OperationResult } from './generated/Protos/common';
-import type { GetMetaByUrlRequest, GetSitemapDataRequest, SeoGlobalConfigResponse, SeoPageConfigResponse, SitemapDataResponse } from './generated/Protos/seo';
-import type { SubmitRequest } from './generated/Protos/user_submit';
-import type { PlaceOrderRequest, GetOrderRequest, CancelOrderRequest, RequestRefundRequest, SubmitReviewRequest, GetOrdersResponse, OrderDetailResponse, GetOrderTrackingResponse } from './generated/Protos/order';
-import type { CreateCommentRequest, GetCommentsByRefRequest, CreateCommentResponse, GetCommentsByRefResponse } from './generated/Protos/comment';
-import type { UserEventRequest } from './generated/Protos/tracking';
-import type { GetPageViewRequest, PageViewResponse } from './generated/Protos/page_view';
-import type { BlogDataSourceResponse, BlogResponseWrapped, BlogGroupDataSourceResponse, BlogGroupResponseWrapped } from './generated/Protos/blog';
-import type { ProductDataSourceResponse, ProductResponseWrapped, ProductGroupResponseWrapped, ProductGroupDataSourceResponse } from './generated/Protos/product';
-
-const DEFAULT_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+const DEFAULT_PUBLIC_KEY = process.env.OPTIFLOW_PUBLIC_KEY || `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnYmTJKkxl/Yg3gA6SQ91foY5CB50LDXcYrq6Ukx8obTuSuH0RAcg/oSem+gT5G1aakdQqtCkYXSHS9wS8kLK3O4AXFCONED4I8tJ8GKRcxFvytxHTIMmqqa+gw+pbPpmV4Zr+KjLHZsLse0jFIJ+gZ2hR3CrAeJ8Au+3uKySNNZ0F2laJAPso9p/80d4nKhf6N/t3/AU2LirnvWyADQeoaXVRQAv3LVpe6IG+bgijg6Cu4rA1kOUxFSj7nD6n1+QZqS7Fu2WdwFd7DbAr1RQKzpxqwF2p7LTifDUUGLrGF45oslxytwbHyEc36eRx1g9mQIdipkIa1KXdjf51sE2jwIDAQAB
 -----END PUBLIC KEY-----`;
+
+// Default fallbacks for environment variables or local debugging
+const DEFAULT_USER_NAME = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_NAME) || 'local_dev@optiflow.vn';
+const DEFAULT_USER_ID = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_ID) || 'DEV-LOCAL-001';
+const DEFAULT_DISPLAY_NAME = (typeof process !== 'undefined' && process.env.OPTIFLOW_DISPLAY_NAME) || 'Local Developer';
+const DEFAULT_USER_AGENT = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_AGENT) || 'QA-Bot';
 
 let cachedChecksum: string | null = null;
 
@@ -59,7 +53,6 @@ function generateChecksum(publicKey: string = DEFAULT_PUBLIC_KEY, values: string
   }
 }
 
-
 export interface GrpcSDKConfig {
   baseUrl?: string;
   orgId: string;
@@ -72,75 +65,69 @@ export interface GrpcSDKConfig {
   token?: string | (() => string | null | undefined);
 }
 
+// Helper types to wrap gRPC ServiceClients dynamically, transforming UnaryCall returning objects to directly return Promises of their responses.
+export type WrappedClient<ClientType, Mappings extends Record<string, keyof ClientType> = {}> = 
+  {
+    [K in keyof Mappings]: Mappings[K] extends keyof ClientType
+      ? ClientType[Mappings[K]] extends (...args: any[]) => { response: Promise<infer R> }
+        ? (...args: Parameters<ClientType[Mappings[K]]>) => Promise<R>
+        : never
+      : never;
+  } & {
+    [K in keyof ClientType]: ClientType[K] extends (...args: any[]) => { response: Promise<infer R> }
+      ? (...args: Parameters<ClientType[K]>) => Promise<R>
+      : ClientType[K];
+  };
+
+function wrapClient<T extends object>(client: T, mappings: Record<string, string> = {}): any {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      let actualProp = prop;
+      if (typeof prop === 'string' && mappings[prop]) {
+        actualProp = mappings[prop];
+      }
+      
+      const original = Reflect.get(target, actualProp, receiver);
+      if (typeof original === 'function') {
+        return function (...args: any[]) {
+          const call = original.apply(target, args);
+          if (call && typeof call === 'object' && 'response' in call) {
+            return call.response;
+          }
+          return call;
+        };
+      }
+      return original;
+    }
+  });
+}
+
+// Naming backward-compatibility mappings
+const BLOG_MAPPINGS = {
+  getByQuery: 'getBlogsByQuery',
+  getBySlug: 'getBlogDetail'
+} as const;
+
+const PRODUCT_MAPPINGS = {
+  getByQuery: 'getProductsByQuery',
+  getBySlug: 'getProductDetail'
+} as const;
+
 export class OptiFlowGrpcSDK {
   private readonly transport: GrpcWebFetchTransport;
   private token: string | null = null;
   private tokenGetter?: () => string | null | undefined;
 
-  // Private raw clients to prevent bypass of SDK custom interceptors
-  private readonly rawAuth: AuthServiceClient;
-  private readonly rawBlog: BlogServiceClient;
-  private readonly rawComment: CommentServiceClient;
-  private readonly rawOrder: OrderServiceClient;
-  private readonly rawPageView: PageViewServiceClient;
-  private readonly rawProduct: ProductServiceClient;
-  private readonly rawSeo: SeoServiceClient;
-  private readonly rawTracking: TrackingServiceClient;
-  private readonly rawUserSubmit: UserSubmitServiceClient;
-
-  // Public, fully-typed API methods returning direct response promises
-  public readonly auth: {
-    login: (req: LoginRequest) => Promise<LoginResponse>;
-  };
-
-  public readonly blog: {
-    getByQuery: (req: CommonQuery) => Promise<BlogDataSourceResponse>;
-    getBySlug: (req: GetBySlugRequest) => Promise<BlogResponseWrapped>;
-    getBlogsByBlogGroupSlug: (req: GetBySlugPagedRequest) => Promise<BlogDataSourceResponse>;
-    getBlogGroupsBySlug: (req: GetBySlugRequest) => Promise<BlogGroupResponseWrapped>;
-    getBlogGroupsByQuery: (req: CommonQuery) => Promise<BlogGroupDataSourceResponse>;
-  };
-
-  public readonly comment: {
-    createComment: (req: CreateCommentRequest) => Promise<CreateCommentResponse>;
-    getCommentsByRef: (req: GetCommentsByRefRequest) => Promise<GetCommentsByRefResponse>;
-  };
-
-  public readonly order: {
-    placeOrder: (req: PlaceOrderRequest) => Promise<OperationResult>;
-    getMyOrders: (req: CommonQuery) => Promise<GetOrdersResponse>;
-    getOrderDetail: (req: GetOrderRequest) => Promise<OrderDetailResponse>;
-    cancelOrder: (req: CancelOrderRequest) => Promise<OperationResult>;
-    getOrderTracking: (req: GetOrderRequest) => Promise<GetOrderTrackingResponse>;
-    requestRefund: (req: RequestRefundRequest) => Promise<OperationResult>;
-    submitReview: (req: SubmitReviewRequest) => Promise<OperationResult>;
-  };
-
-  public readonly pageView: {
-    getPageView: (req: GetPageViewRequest) => Promise<PageViewResponse>;
-  };
-
-  public readonly product: {
-    getByQuery: (req: CommonQuery) => Promise<ProductDataSourceResponse>;
-    getBySlug: (req: GetBySlugRequest) => Promise<ProductResponseWrapped>;
-    getProductsByProductGroupSlug: (req: GetBySlugPagedRequest) => Promise<ProductDataSourceResponse>;
-    getProductGroupsBySlug: (req: GetBySlugRequest) => Promise<ProductGroupResponseWrapped>;
-    getProductGroupsByQuery: (req: CommonQuery) => Promise<ProductGroupDataSourceResponse>;
-  };
-
-  public readonly seo: {
-    getGlobalConfig: (req: Empty) => Promise<SeoGlobalConfigResponse>;
-    getMetaByUrl: (req: GetMetaByUrlRequest) => Promise<SeoPageConfigResponse>;
-    getSitemapData: (req: GetSitemapDataRequest) => Promise<SitemapDataResponse>;
-  };
-
-  public readonly tracking: {
-    ingestEvent: (req: UserEventRequest) => Promise<OperationResult>;
-  };
-
-  public readonly userSubmit: {
-    submit: (req: SubmitRequest) => Promise<OperationResult>;
-  };
+  // Fully-typed API service clients mapping directly to response Promises
+  public readonly auth: WrappedClient<AuthServiceClient>;
+  public readonly blog: WrappedClient<BlogServiceClient, typeof BLOG_MAPPINGS>;
+  public readonly comment: WrappedClient<CommentServiceClient>;
+  public readonly order: WrappedClient<OrderServiceClient>;
+  public readonly pageView: WrappedClient<PageViewServiceClient>;
+  public readonly product: WrappedClient<ProductServiceClient, typeof PRODUCT_MAPPINGS>;
+  public readonly seo: WrappedClient<SeoServiceClient>;
+  public readonly tracking: WrappedClient<TrackingServiceClient>;
+  public readonly userSubmit: WrappedClient<UserSubmitServiceClient>;
 
   constructor(config: GrpcSDKConfig) {
     const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
@@ -164,10 +151,10 @@ export class OptiFlowGrpcSDK {
               checksum: generateChecksum(publicKey),
               'x-org': config.orgId,
               'x-requested-at': Date.now().toString(),
-              'x-user-name': config.userName || 'local_dev@optiflow.vn',
-              'x-userId': config.userId || 'DEV-LOCAL-001',
-              'x-display-name': config.displayName || 'Local Developer',
-              'user-agent': config.userAgent || 'QA-Bot',
+              'x-user-name': config.userName || DEFAULT_USER_NAME,
+              'x-userId': config.userId || DEFAULT_USER_ID,
+              'x-display-name': config.displayName || DEFAULT_DISPLAY_NAME,
+              'user-agent': config.userAgent || DEFAULT_USER_AGENT,
             };
 
             // Dynamically resolve and attach authorization token
@@ -179,7 +166,6 @@ export class OptiFlowGrpcSDK {
               options.meta['authorization'] = `Bearer ${activeToken}`;
             }
 
-            const isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
             const isBrowser = typeof window !== 'undefined';
 
             if (isDebug) {
@@ -273,70 +259,16 @@ export class OptiFlowGrpcSDK {
         } as RequestInit),
     });
 
-    // Instantiate raw clients
-    this.rawAuth = new AuthServiceClient(this.transport);
-    this.rawBlog = new BlogServiceClient(this.transport);
-    this.rawComment = new CommentServiceClient(this.transport);
-    this.rawOrder = new OrderServiceClient(this.transport);
-    this.rawPageView = new PageViewServiceClient(this.transport);
-    this.rawProduct = new ProductServiceClient(this.transport);
-    this.rawSeo = new SeoServiceClient(this.transport);
-    this.rawTracking = new TrackingServiceClient(this.transport);
-    this.rawUserSubmit = new UserSubmitServiceClient(this.transport);
-
-    // Initialize wrapped promise clients
-    this.auth = {
-      login: (req) => this.rawAuth.login(req).response,
-    };
-
-    this.blog = {
-      getByQuery: (req) => this.rawBlog.getBlogsByQuery(req).response,
-      getBySlug: (req) => this.rawBlog.getBlogDetail(req).response,
-      getBlogsByBlogGroupSlug: (req) => this.rawBlog.getBlogsByBlogGroupSlug(req).response,
-      getBlogGroupsBySlug: (req) => this.rawBlog.getBlogGroupsBySlug(req).response,
-      getBlogGroupsByQuery: (req) => this.rawBlog.getBlogGroupsByQuery(req).response,
-    };
-
-    this.comment = {
-      createComment: (req) => this.rawComment.createComment(req).response,
-      getCommentsByRef: (req) => this.rawComment.getCommentsByRef(req).response,
-    };
-
-    this.order = {
-      placeOrder: (req) => this.rawOrder.placeOrder(req).response,
-      getMyOrders: (req) => this.rawOrder.getMyOrders(req).response,
-      getOrderDetail: (req) => this.rawOrder.getOrderDetail(req).response,
-      cancelOrder: (req) => this.rawOrder.cancelOrder(req).response,
-      getOrderTracking: (req) => this.rawOrder.getOrderTracking(req).response,
-      requestRefund: (req) => this.rawOrder.requestRefund(req).response,
-      submitReview: (req) => this.rawOrder.submitReview(req).response,
-    };
-
-    this.pageView = {
-      getPageView: (req) => this.rawPageView.getPageView(req).response,
-    };
-
-    this.product = {
-      getByQuery: (req) => this.rawProduct.getProductsByQuery(req).response,
-      getBySlug: (req) => this.rawProduct.getProductDetail(req).response,
-      getProductsByProductGroupSlug: (req) => this.rawProduct.getProductsByProductGroupSlug(req).response,
-      getProductGroupsBySlug: (req) => this.rawProduct.getProductGroupsBySlug(req).response,
-      getProductGroupsByQuery: (req) => this.rawProduct.getProductGroupsByQuery(req).response,
-    };
-
-    this.seo = {
-      getGlobalConfig: (req) => this.rawSeo.getGlobalConfig(req).response,
-      getMetaByUrl: (req) => this.rawSeo.getMetaByUrl(req).response,
-      getSitemapData: (req) => this.rawSeo.getSitemapData(req).response,
-    };
-
-    this.tracking = {
-      ingestEvent: (req) => this.rawTracking.ingestEvent(req).response,
-    };
-
-    this.userSubmit = {
-      submit: (req) => this.rawUserSubmit.submit(req).response,
-    };
+    // Initialize wrapped clients using proxies
+    this.auth = wrapClient(new AuthServiceClient(this.transport));
+    this.blog = wrapClient(new BlogServiceClient(this.transport), BLOG_MAPPINGS);
+    this.comment = wrapClient(new CommentServiceClient(this.transport));
+    this.order = wrapClient(new OrderServiceClient(this.transport));
+    this.pageView = wrapClient(new PageViewServiceClient(this.transport));
+    this.product = wrapClient(new ProductServiceClient(this.transport), PRODUCT_MAPPINGS);
+    this.seo = wrapClient(new SeoServiceClient(this.transport));
+    this.tracking = wrapClient(new TrackingServiceClient(this.transport));
+    this.userSubmit = wrapClient(new UserSubmitServiceClient(this.transport));
   }
 
   /**
