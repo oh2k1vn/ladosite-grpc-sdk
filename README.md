@@ -71,32 +71,4 @@ const response = await call.response;
 const headers = await call.headers;
 ```
 
----
 
-## 🏗 Quy trình Phát triển (Maintainer)
-
-Khi cần cập nhật thêm mới các API hoặc thay đổi file `.proto`:
-
-### 1. Cập nhật `.proto`
-Đặt các file `.proto` mới hoặc sửa đổi vào thư mục `Protos/`.
-
-### 2. Biên dịch & Kiểm thử cục bộ
-Tự sinh mã nguồn TypeScript và build thư viện:
-```bash
-# Tự động tải protoc và sinh mã TypeScript trong src/generated/
-npm run generate
-
-# Biên dịch SDK sang thư mục dist/ (ESM và CommonJS)
-npm run build
-
-# Chạy kiểm thử kiểu dữ liệu
-npm run verify
-```
-
-### 3. Đóng gói & Phát hành
-Đẩy các thay đổi lên nhánh `develop` hoặc `main`. Hệ thống CI/CD (GitHub Actions) sẽ tự động chạy quy trình biên dịch gRPC Client và đồng bộ mã nguồn tạo ra để các dự án tiêu thụ luôn nhận được phiên bản mới nhất.
-```bash
-git add .
-git commit -m "feat: add new grpc service"
-git push origin develop
-```
