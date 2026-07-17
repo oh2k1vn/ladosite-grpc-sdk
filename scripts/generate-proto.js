@@ -36,6 +36,33 @@ console.log(`Running: ${command}`);
 try {
   execSync(command, { cwd: rootDir, stdio: 'inherit' });
   console.log('✅ gRPC client code generated successfully under src/generated/');
+
+  // 4. Generate/Update src/index.ts to automatically export all generated files and their client types
+  const indexFilePath = path.join(rootDir, 'src', 'index.ts');
+  let indexContent = `// Export core SDK client and configuration
+export { OptiFlowGrpcSDK, GrpcSDKConfig, grpcSDK, WrappedClient } from './client';
+
+// Re-export only the message types (Request/Response interfaces) from Protos.
+// We DO NOT export raw ServiceClient classes from *.client files to maximize security
+// and ensure consumers always route their requests through the secure SDK class wrapper.
+`;
+
+  const protoNames = files.map(file => path.basename(file, '.proto')).sort();
+
+  protoNames.forEach(name => {
+    indexContent += `export * from './generated/Protos/${name}';\n`;
+  });
+
+  indexContent += `\n// Re-export type-only ServiceClient classes to allow type annotations without exposing raw classes at runtime.\n`;
+  protoNames.forEach(name => {
+    const clientPath = path.join(outDir, 'Protos', `${name}.client.ts`);
+    if (fs.existsSync(clientPath)) {
+      indexContent += `export type * from './generated/Protos/${name}.client';\n`;
+    }
+  });
+
+  fs.writeFileSync(indexFilePath, indexContent, 'utf-8');
+  console.log('✅ Generated src/index.ts with exports');
 } catch (error) {
   console.error('❌ Failed to generate gRPC client code:', error);
   process.exit(1);

@@ -285,3 +285,8 @@ export class OptiFlowGrpcSDK {
     this.token = null;
   }
 }
+
+/**
+ * Helper factory function to instantiate the OptiFlow gRPC SDK without using 'new'
+ */
+export const grpcSDK = (config: GrpcSDKConfig) => new OptiFlowGrpcSDK(config);
