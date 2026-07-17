@@ -1,5 +1,9 @@
 // Export core SDK client and configuration
 export { OptiFlowGrpcSDK, GrpcSDKConfig, grpcSDK, WrappedClient } from './client';
+export * from './criteria';
+
+// Export wrapped clients
+export * from './generated/wrapped-clients';
 
 // Re-export only the message types (Request/Response interfaces) from Protos.
 // We DO NOT export raw ServiceClient classes from *.client files to maximize security

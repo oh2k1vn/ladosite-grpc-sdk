@@ -16,6 +16,9 @@
     "dist",
     "Protos"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "generate": "node scripts/generate-proto.js",
     "build": "tsup",

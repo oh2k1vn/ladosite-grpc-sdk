@@ -13,11 +13,23 @@ import { SeoServiceClient } from './generated/Protos/seo.client';
 import { TrackingServiceClient } from './generated/Protos/tracking.client';
 import { UserSubmitServiceClient } from './generated/Protos/user_submit.client';
 
+// Import compile-time wrapped clients
+import {
+  WrappedAuthServiceClient,
+  WrappedBlogServiceClient,
+  WrappedCommentServiceClient,
+  WrappedOrderServiceClient,
+  WrappedPageViewServiceClient,
+  WrappedProductServiceClient,
+  WrappedSeoServiceClient,
+  WrappedTrackingServiceClient,
+  WrappedUserSubmitServiceClient,
+} from './generated/wrapped-clients';
+
 const DEFAULT_PUBLIC_KEY = process.env.OPTIFLOW_PUBLIC_KEY || `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnYmTJKkxl/Yg3gA6SQ91foY5CB50LDXcYrq6Ukx8obTuSuH0RAcg/oSem+gT5G1aakdQqtCkYXSHS9wS8kLK3O4AXFCONED4I8tJ8GKRcxFvytxHTIMmqqa+gw+pbPpmV4Zr+KjLHZsLse0jFIJ+gZ2hR3CrAeJ8Au+3uKySNNZ0F2laJAPso9p/80d4nKhf6N/t3/AU2LirnvWyADQeoaXVRQAv3LVpe6IG+bgijg6Cu4rA1kOUxFSj7nD6n1+QZqS7Fu2WdwFd7DbAr1RQKzpxqwF2p7LTifDUUGLrGF45oslxytwbHyEc36eRx1g9mQIdipkIa1KXdjf51sE2jwIDAQAB
 -----END PUBLIC KEY-----`;
 
-// Default fallbacks for environment variables or local debugging
 const DEFAULT_USER_NAME = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_NAME) || 'local_dev@optiflow.vn';
 const DEFAULT_USER_ID = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_ID) || 'DEV-LOCAL-001';
 const DEFAULT_DISPLAY_NAME = (typeof process !== 'undefined' && process.env.OPTIFLOW_DISPLAY_NAME) || 'Local Developer';
@@ -65,69 +77,24 @@ export interface GrpcSDKConfig {
   token?: string | (() => string | null | undefined);
 }
 
-// Helper types to wrap gRPC ServiceClients dynamically, transforming UnaryCall returning objects to directly return Promises of their responses.
-export type WrappedClient<ClientType, Mappings extends Record<string, keyof ClientType> = {}> = 
-  {
-    [K in keyof Mappings]: Mappings[K] extends keyof ClientType
-      ? ClientType[Mappings[K]] extends (...args: any[]) => { response: Promise<infer R> }
-        ? (...args: Parameters<ClientType[Mappings[K]]>) => Promise<R>
-        : never
-      : never;
-  } & {
-    [K in keyof ClientType]: ClientType[K] extends (...args: any[]) => { response: Promise<infer R> }
-      ? (...args: Parameters<ClientType[K]>) => Promise<R>
-      : ClientType[K];
-  };
-
-function wrapClient<T extends object>(client: T, mappings: Record<string, string> = {}): any {
-  return new Proxy(client, {
-    get(target, prop, receiver) {
-      let actualProp = prop;
-      if (typeof prop === 'string' && mappings[prop]) {
-        actualProp = mappings[prop];
-      }
-      
-      const original = Reflect.get(target, actualProp, receiver);
-      if (typeof original === 'function') {
-        return function (...args: any[]) {
-          const call = original.apply(target, args);
-          if (call && typeof call === 'object' && 'response' in call) {
-            return call.response;
-          }
-          return call;
-        };
-      }
-      return original;
-    }
-  });
-}
-
-// Naming backward-compatibility mappings
-const BLOG_MAPPINGS = {
-  getByQuery: 'getBlogsByQuery',
-  getBySlug: 'getBlogDetail'
-} as const;
-
-const PRODUCT_MAPPINGS = {
-  getByQuery: 'getProductsByQuery',
-  getBySlug: 'getProductDetail'
-} as const;
+// Legacy type alias for backward-compatibility
+export type WrappedClient<T, M = {}> = T;
 
 export class OptiFlowGrpcSDK {
   private readonly transport: GrpcWebFetchTransport;
   private token: string | null = null;
   private tokenGetter?: () => string | null | undefined;
 
-  // Fully-typed API service clients mapping directly to response Promises
-  public readonly auth: WrappedClient<AuthServiceClient>;
-  public readonly blog: WrappedClient<BlogServiceClient, typeof BLOG_MAPPINGS>;
-  public readonly comment: WrappedClient<CommentServiceClient>;
-  public readonly order: WrappedClient<OrderServiceClient>;
-  public readonly pageView: WrappedClient<PageViewServiceClient>;
-  public readonly product: WrappedClient<ProductServiceClient, typeof PRODUCT_MAPPINGS>;
-  public readonly seo: WrappedClient<SeoServiceClient>;
-  public readonly tracking: WrappedClient<TrackingServiceClient>;
-  public readonly userSubmit: WrappedClient<UserSubmitServiceClient>;
+  // Fully statically-typed API service clients
+  public readonly auth: WrappedAuthServiceClient;
+  public readonly blog: WrappedBlogServiceClient;
+  public readonly comment: WrappedCommentServiceClient;
+  public readonly order: WrappedOrderServiceClient;
+  public readonly pageView: WrappedPageViewServiceClient;
+  public readonly product: WrappedProductServiceClient;
+  public readonly seo: WrappedSeoServiceClient;
+  public readonly tracking: WrappedTrackingServiceClient;
+  public readonly userSubmit: WrappedUserSubmitServiceClient;
 
   constructor(config: GrpcSDKConfig) {
     const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
@@ -259,16 +226,16 @@ export class OptiFlowGrpcSDK {
         } as RequestInit),
     });
 
-    // Initialize wrapped clients using proxies
-    this.auth = wrapClient(new AuthServiceClient(this.transport));
-    this.blog = wrapClient(new BlogServiceClient(this.transport), BLOG_MAPPINGS);
-    this.comment = wrapClient(new CommentServiceClient(this.transport));
-    this.order = wrapClient(new OrderServiceClient(this.transport));
-    this.pageView = wrapClient(new PageViewServiceClient(this.transport));
-    this.product = wrapClient(new ProductServiceClient(this.transport), PRODUCT_MAPPINGS);
-    this.seo = wrapClient(new SeoServiceClient(this.transport));
-    this.tracking = wrapClient(new TrackingServiceClient(this.transport));
-    this.userSubmit = wrapClient(new UserSubmitServiceClient(this.transport));
+    // Initialize statically-generated wrapped clients
+    this.auth = new WrappedAuthServiceClient(new AuthServiceClient(this.transport));
+    this.blog = new WrappedBlogServiceClient(new BlogServiceClient(this.transport));
+    this.comment = new WrappedCommentServiceClient(new CommentServiceClient(this.transport));
+    this.order = new WrappedOrderServiceClient(new OrderServiceClient(this.transport));
+    this.pageView = new WrappedPageViewServiceClient(new PageViewServiceClient(this.transport));
+    this.product = new WrappedProductServiceClient(new ProductServiceClient(this.transport));
+    this.seo = new WrappedSeoServiceClient(new SeoServiceClient(this.transport));
+    this.tracking = new WrappedTrackingServiceClient(new TrackingServiceClient(this.transport));
+    this.userSubmit = new WrappedUserSubmitServiceClient(new UserSubmitServiceClient(this.transport));
   }
 
   /**
