@@ -1,42 +1,59 @@
 # @ladosite/grpc-sdk
 
-Thư viện gRPC SDK chứa các gRPC Client được biên dịch sẵn từ các định nghĩa Protobuf (`.proto`). Phù hợp cho mô hình nhiều dự án Next.js outsource độc lập mà không bắt buộc phải sử dụng Monorepo.
-
-## 🚀 Tính năng nổi bật
-1. **Biên dịch một lần duy nhất (Generate Once)**: Không cần cài đặt `protoc` toàn cục trên máy dev hoặc copy file `.proto` vào từng dự án Next.js.
-2. **Khởi tạo linh hoạt (Configurable)**: Cho phép truyền các tham số cấu hình riêng biệt cho từng dự án (ví dụ `orgId`, `baseUrl`, user information) khi khởi tạo SDK.
-3. **TypeScript Out-of-the-Box**: Cung cấp đầy đủ các types từ message protobuf và tự động autocomplete các gRPC services.
-4. **Hỗ trợ ESM & CommonJS**: Sử dụng `tsup` đóng gói sẵn định dạng ESM (`.mjs`) và CommonJS (`.js`), tương thích hoàn toàn với Next.js Server Components, Server Actions và Route Handlers.
+Thư viện gRPC SDK chứa các gRPC Client được tự động biên dịch từ định nghĩa Protobuf (`.proto`), giúp các dự án độc lập (Next.js, Node.js...) kết nối và sử dụng các dịch vụ của OptiFlow một cách dễ dàng và đồng bộ.
 
 ---
 
-## 🛠 Cài đặt & Sử dụng
+## 🚀 Tính năng nổi bật
 
-### 1. Trong dự án Next.js (Consumer)
-Cài đặt thư viện từ NPM Registry:
+- **Tự động hóa (Auto-generated)**: Client code và Types được tự động tạo từ file `.proto` qua CI/CD GitHub Actions.
+- **Dễ tích hợp (Git-centric)**: Cài đặt trực tiếp qua Git URL mà không cần publish lên NPM Registry công cộng.
+- **Hỗ trợ ESM & CommonJS**: Đóng gói song song bằng `tsup` giúp tương thích hoàn toàn với Next.js (Server Components, Server Actions và Route Handlers).
+
+---
+
+## 🛠 Hướng dẫn tích hợp (Consumer)
+
+### 1. Cài đặt qua Git
+
+Thêm trực tiếp vào `dependencies` trong `package.json` của dự án:
+
+```json
+"dependencies": {
+  "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#main"
+}
+```
+*Lưu ý: Có thể thay thế `#main` bằng `#develop` hoặc mã hash commit cụ thể.*
+
+Sau đó chạy lệnh:
 ```bash
-npm install @ladosite/grpc-sdk
+npm install
 ```
 
-Khởi tạo SDK (ví dụ tại `src/lib/grpc.ts` của dự án Next.js):
+### 2. Khởi tạo & Sử dụng
+
+Khởi tạo SDK (ví dụ tại `src/lib/grpc.ts` trong Next.js):
+
 ```typescript
+import 'server-only';
 import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
 
 export const grpcSDK = new OptiFlowGrpcSDK({
-  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://xxxx.xxxx.vn',
+  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn',
   orgId: process.env.OPTIFLOW_ORG_ID || 'xxxxxxxxxxxxxxxx',
   debug: process.env.NODE_ENV === 'development',
 });
 ```
 
-Gọi các service API một cách dễ dàng với Promise trả về kết quả trực tiếp:
+Sử dụng Client để gọi API (trả về Promise trực tiếp):
+
 ```typescript
 import { grpcSDK } from '@/lib/grpc';
 import type { PlaceOrderRequest } from '@ladosite/grpc-sdk';
 
 export async function placeOrder(request: PlaceOrderRequest) {
   try {
-    // SDK tự động sinh Checksum RSA và đính kèm headers x-org, x-userId, v.v.
+    // SDK tự động đính kèm metadata xác thực và cấu hình cần thiết
     const response = await grpcSDK.order.placeOrder(request);
     return response;
   } catch (error) {
@@ -46,62 +63,40 @@ export async function placeOrder(request: PlaceOrderRequest) {
 }
 ```
 
-Nếu bạn cần truy cập đối tượng Client thuần của `@protobuf-ts` (để lấy metadata, trailers, stream...):
+Truy cập đối tượng Client thuần của `@protobuf-ts` (nếu cần lấy headers/metadata/trailers...):
+
 ```typescript
-const rawCall = grpcSDK.rawOrder.placeOrder(request);
-const response = await rawCall.response;
-const headers = await rawCall.headers;
+const call = grpcSDK.rawOrder.placeOrder(request);
+const response = await call.response;
+const headers = await call.headers;
 ```
 
 ---
 
-## 🏗 Phát triển & Biên dịch SDK (Dành cho Maintainer)
+## 🏗 Quy trình Phát triển (Maintainer)
 
-### Thêm hoặc Sửa đổi `.proto`
-1. Đặt hoặc cập nhật các file `.proto` của bạn trong thư mục `Protos/`.
-2. Chạy lệnh generate để tạo ra code TypeScript tương ứng:
-   ```bash
-   npm run generate
-   ```
-   *(Script sẽ tự động tải phiên bản `protoc` phù hợp từ NPM về để chạy cục bộ, không cần cài `protoc` toàn cục trên máy).*
+Khi cần cập nhật thêm mới các API hoặc thay đổi file `.proto`:
 
-### Biên dịch & Đóng gói (Build)
-Để build thư viện ra thư mục `dist/` phục vụ việc publish:
+### 1. Cập nhật `.proto`
+Đặt các file `.proto` mới hoặc sửa đổi vào thư mục `Protos/`.
+
+### 2. Biên dịch & Kiểm thử cục bộ
+Tự sinh mã nguồn TypeScript và build thư viện:
 ```bash
+# Tự động tải protoc và sinh mã TypeScript trong src/generated/
+npm run generate
+
+# Biên dịch SDK sang thư mục dist/ (ESM và CommonJS)
 npm run build
-```
 
-### Chạy kiểm thử kiểm tra kiểu dữ liệu (Verify)
-```bash
+# Chạy kiểm thử kiểu dữ liệu
 npm run verify
 ```
 
----
-
-## 📦 Quy trình Publish lên NPM Registry
-Thư viện được cấu hình để publish dưới dạng **public scoped package** mặc định.
-
-### Cách 1: Publish thông thường
-Đảm bảo bạn đã đăng nhập và có quyền ghi đối với scope `@ladosite`:
+### 3. Đóng gói & Phát hành
+Đẩy các thay đổi lên nhánh `develop` hoặc `main`. Hệ thống CI/CD (GitHub Actions) sẽ tự động chạy quy trình biên dịch gRPC Client và đồng bộ mã nguồn tạo ra để các dự án tiêu thụ luôn nhận được phiên bản mới nhất.
 ```bash
-npm publish
+git add .
+git commit -m "feat: add new grpc service"
+git push origin develop
 ```
-
-### Cách 2: Sử dụng Git URL trực tiếp (Không cần NPM Registry)
-Đẩy code của SDK này lên một Git repository riêng (ví dụ: `https://github.com/ladosite/grpc-sdk`).
-Trong các dự án Next.js, cài đặt trực tiếp qua Git URL:
-```json
-"dependencies": {
-  "@ladosite/grpc-sdk": "git+https://github.com/ladosite/grpc-sdk.git#v1.0.0"
-}
-```
-
-### Cách 3: Sử dụng Local Link (Để phát triển nội bộ / Test nhanh)
-1. Tại thư mục SDK:
-   ```bash
-   npm link
-   ```
-2. Tại thư mục dự án Next.js:
-   ```bash
-   npm link @ladosite/grpc-sdk
-   ```
