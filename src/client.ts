@@ -122,15 +122,18 @@ export class OptiFlowGrpcSDK {
               'x-userId': config.userId || DEFAULT_USER_ID,
               'x-display-name': config.displayName || DEFAULT_DISPLAY_NAME,
               'user-agent': config.userAgent || DEFAULT_USER_AGENT,
+              ...options.meta,
             };
 
-            // Dynamically resolve and attach authorization token
-            let activeToken = self.token;
-            if (self.tokenGetter) {
-              activeToken = self.tokenGetter() || null;
-            }
-            if (activeToken) {
-              options.meta['authorization'] = `Bearer ${activeToken}`;
+            // Dynamically resolve and attach authorization token if not already present
+            if (!options.meta['authorization'] && !options.meta['Authorization']) {
+              let activeToken = self.token;
+              if (self.tokenGetter) {
+                activeToken = self.tokenGetter() || null;
+              }
+              if (activeToken) {
+                options.meta['authorization'] = `Bearer ${activeToken}`;
+              }
             }
 
             const isBrowser = typeof window !== 'undefined';
