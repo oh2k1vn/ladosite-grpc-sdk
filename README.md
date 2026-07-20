@@ -63,6 +63,50 @@ export async function placeOrder(request: PlaceOrderRequest) {
 }
 ```
 
+### 3. Xác thực bằng Token (Authentication & Session)
+
+Khi người dùng đăng nhập và hệ thống cần gọi các API yêu cầu xác thực (ví dụ đặt hàng, thông tin cá nhân), SDK tự động đính kèm token vào header dưới dạng `Authorization: Bearer <token>`. Bạn có thể cấu hình token theo 2 cách dưới đây:
+
+#### Cách A: Sử dụng Token tĩnh hoặc Hàm Getter động khi khởi tạo (Khuyên dùng)
+
+Bạn có thể truyền trực tiếp trường `token` vào cấu hình khởi tạo. Cấu hình này hỗ trợ cả một chuỗi string tĩnh hoặc một hàm callback động (Getter):
+
+- **Hàm Getter động (Khuyên dùng cho Web/Next.js):** Lấy token trực tiếp từ Cookies hoặc Session trên từng request, giúp tránh rò rỉ chéo token giữa các người dùng trong môi trường Server-side.
+- **Token tĩnh:** Hữu ích cho các background worker, script hoặc CLI độc lập.
+
+```typescript
+import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
+import { cookies } from 'next/headers';
+
+export const grpcSDK = new OptiFlowGrpcSDK({
+  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn',
+  orgId: process.env.OPTIFLOW_ORG_ID || 'xxxxxxxxxxxxxxxx',
+  
+  // Cách 1: Hàm Dynamic Getter lấy token theo từng request (Next.js Server Component)
+  token: () => {
+    const cookieStore = cookies();
+    return cookieStore.get('auth_token')?.value;
+  }
+
+  // Cách 2: Token tĩnh (nếu dùng)
+  // token: 'my_static_token_value'
+});
+```
+
+#### Cách B: Thiết lập / Xóa token động trên instance (Client-side / Stateful)
+
+Nếu bạn sử dụng SDK dạng Singleton toàn cục trong ứng dụng client-side hoặc stateful client, bạn có thể thiết lập hoặc xoá token trực tiếp bằng phương thức `setToken` và `clearToken`:
+
+```typescript
+import { grpcSDK } from '@/lib/grpc';
+
+// Gọi sau khi người dùng đăng nhập thành công
+grpcSDK.setToken('new_access_token_value');
+
+// Gọi khi người dùng đăng xuất (logout)
+grpcSDK.clearToken();
+```
+
 ## 🧪 Công cụ Thử nghiệm (Playground Sandbox)
 
 SDK tích hợp sẵn một công cụ CLI chạy trực tiếp trên Node.js để kiểm thử các gRPC API cục bộ mà không cần phụ thuộc vào trình duyệt hay dựng proxy server:
