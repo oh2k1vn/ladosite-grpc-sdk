@@ -251,6 +251,17 @@ export class OptiFlowGrpcSDK {
   public clearToken(): void {
     this.token = null;
   }
+
+  /**
+   * Check whether an authentication token is currently available.
+   * Returns true if a static token is set or a tokenGetter returns a truthy value.
+   */
+  public hasToken(): boolean {
+    if (this.tokenGetter) {
+      return !!this.tokenGetter();
+    }
+    return this.token !== null;
+  }
 }
 
 /**
