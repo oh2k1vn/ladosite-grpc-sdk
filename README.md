@@ -1,107 +1,148 @@
 # @ladosite/grpc-sdk
 
-Thư viện gRPC SDK chứa các gRPC Client được biên dịch sẵn từ các định nghĩa Protobuf (`.proto`). Phù hợp cho mô hình nhiều dự án Next.js outsource độc lập mà không bắt buộc phải sử dụng Monorepo.
-
-## 🚀 Tính năng nổi bật
-1. **Biên dịch một lần duy nhất (Generate Once)**: Không cần cài đặt `protoc` toàn cục trên máy dev hoặc copy file `.proto` vào từng dự án Next.js.
-2. **Khởi tạo linh hoạt (Configurable)**: Cho phép truyền các tham số cấu hình riêng biệt cho từng dự án (ví dụ `orgId`, `baseUrl`, user information) khi khởi tạo SDK.
-3. **TypeScript Out-of-the-Box**: Cung cấp đầy đủ các types từ message protobuf và tự động autocomplete các gRPC services.
-4. **Hỗ trợ ESM & CommonJS**: Sử dụng `tsup` đóng gói sẵn định dạng ESM (`.mjs`) và CommonJS (`.js`), tương thích hoàn toàn với Next.js Server Components, Server Actions và Route Handlers.
+Thư viện gRPC SDK đóng gói sẵn cho **OptiFlow E-Commerce**, tối ưu hóa riêng cho **Next.js App Router (SEO, Core Web Vitals, ISR & Performance)**.
 
 ---
 
-## 🛠 Cài đặt & Sử dụng
+## ⚡ 1. Cài đặt & Khởi tạo (Chỉ 1 Lần)
 
-### 1. Trong dự án Next.js (Consumer)
-Cài đặt thư viện từ NPM Registry:
+Cài đặt thư viện:
 ```bash
 npm install @ladosite/grpc-sdk
 ```
 
-Khởi tạo SDK (ví dụ tại `src/lib/grpc.ts` của dự án Next.js):
+Khởi tạo SDK tại `src/lib/grpc.ts`:
 ```typescript
 import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
 
-export const grpcSDK = new OptiFlowGrpcSDK({
-  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://xxxx.xxxx.vn',
-  orgId: process.env.OPTIFLOW_ORG_ID || 'xxxxxxxxxxxxxxxx',
+export const sdk = new OptiFlowGrpcSDK({
+  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn',
+  orgId: process.env.OPTIFLOW_ORG_ID || 'your-org-id',
   debug: process.env.NODE_ENV === 'development',
 });
 ```
 
-Gọi các service API một cách dễ dàng với Promise trả về kết quả trực tiếp:
-```typescript
-import { grpcSDK } from '@/lib/grpc';
-import type { PlaceOrderRequest } from '@ladosite/grpc-sdk';
+---
 
-export async function placeOrder(request: PlaceOrderRequest) {
-  try {
-    // SDK tự động sinh Checksum RSA và đính kèm headers x-org, x-userId, v.v.
-    const response = await grpcSDK.order.placeOrder(request);
-    return response;
-  } catch (error) {
-    console.error('Failed to place order:', error);
-    throw error;
-  }
+## 🚀 2. Hướng dẫn Sử dụng trong Next.js App Router
+
+SDK cung cấp các hàm **1-Line E-Com Helpers** tự động xử lý gRPC Data + Next.js Metadata chuẩn SEO + Schema.org JSON-LD cho Google Rich Snippets.
+
+### 🛒 Trang Chi Tiết Sản Phẩm (PDP) — `app/products/[slug]/page.tsx`
+```typescript
+import { sdk } from '@/lib/grpc';
+import { notFound } from 'next/navigation';
+
+// 1. Tự động lấy Next.js Metadata chuẩn SEO cho Head
+export async function generateMetadata({ params }: { params: { slug: string } }) {
+  const { metadata } = await sdk.getProductPageData({ slug: params.slug });
+  return metadata || {};
 }
-```
 
-Nếu bạn cần truy cập đối tượng Client thuần của `@protobuf-ts` (để lấy metadata, trailers, stream...):
-```typescript
-const rawCall = grpcSDK.rawOrder.placeOrder(request);
-const response = await rawCall.response;
-const headers = await rawCall.headers;
+// 2. Lấy dữ liệu Sản phẩm & Script JSON-LD cho Google
+export default async function ProductPage({ params }: { params: { slug: string } }) {
+  const { product, jsonLdScript } = await sdk.getProductPageData({
+    slug: params.slug,
+    baseUrl: 'https://myshop.com',
+  });
+
+  if (!product) notFound();
+
+  return (
+    <>
+      {/* Script Schema.org Product & Breadcrumb tự động sinh */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdScript) }}
+      />
+      <main>
+        <h1>{product.name}</h1>
+        <p>Giá: {product.price.toLocaleString('vi-VN')} đ</p>
+        <p>{product.description}</p>
+      </main>
+    </>
+  );
+}
 ```
 
 ---
 
-## 🏗 Phát triển & Biên dịch SDK (Dành cho Maintainer)
+### 📦 Trang Danh Mục Sản Phẩm (PLP) — `app/categories/[slug]/page.tsx`
+```typescript
+import { sdk } from '@/lib/grpc';
 
-### Thêm hoặc Sửa đổi `.proto`
-1. Đặt hoặc cập nhật các file `.proto` của bạn trong thư mục `Protos/`.
-2. Chạy lệnh generate để tạo ra code TypeScript tương ứng:
-   ```bash
-   npm run generate
-   ```
-   *(Script sẽ tự động tải phiên bản `protoc` phù hợp từ NPM về để chạy cục bộ, không cần cài `protoc` toàn cục trên máy).*
+export async function generateMetadata({ params }: { params: { slug: string } }) {
+  const { metadata } = await sdk.getCategoryPageData({ slug: params.slug });
+  return metadata || {};
+}
 
-### Biên dịch & Đóng gói (Build)
-Để build thư viện ra thư mục `dist/` phục vụ việc publish:
-```bash
-npm run build
-```
+export default async function CategoryPage({ params }: { params: { slug: string } }) {
+  const { productGroup, products, jsonLdScript } = await sdk.getCategoryPageData({
+    slug: params.slug,
+    pageNumber: 1,
+    pageSize: 24,
+    baseUrl: 'https://myshop.com',
+  });
 
-### Chạy kiểm thử kiểm tra kiểu dữ liệu (Verify)
-```bash
-npm run verify
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdScript) }} />
+      <h1>{productGroup?.name || 'Danh mục sản phẩm'}</h1>
+      <div className="grid">
+        {products?.map((p) => (
+          <div key={p.id}>{p.name} - {p.price.toLocaleString('vi-VN')} đ</div>
+        ))}
+      </div>
+    </>
+  );
+}
 ```
 
 ---
 
-## 📦 Quy trình Publish lên NPM Registry
-Thư viện được cấu hình để publish dưới dạng **public scoped package** mặc định.
+### 🌐 Dynamic Sitemap — `app/sitemap.ts`
+```typescript
+import { sdk } from '@/lib/grpc';
+import type { MetadataRoute } from 'next';
 
-### Cách 1: Publish thông thường
-Đảm bảo bạn đã đăng nhập và có quyền ghi đối với scope `@ladosite`:
-```bash
-npm publish
-```
-
-### Cách 2: Sử dụng Git URL trực tiếp (Không cần NPM Registry)
-Đẩy code của SDK này lên một Git repository riêng (ví dụ: `https://github.com/ladosite/grpc-sdk`).
-Trong các dự án Next.js, cài đặt trực tiếp qua Git URL:
-```json
-"dependencies": {
-  "@ladosite/grpc-sdk": "git+https://github.com/ladosite/grpc-sdk.git#v1.0.0"
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  return await sdk.getSitemap({ url: 'https://myshop.com' });
 }
 ```
 
-### Cách 3: Sử dụng Local Link (Để phát triển nội bộ / Test nhanh)
-1. Tại thư mục SDK:
-   ```bash
-   npm link
-   ```
-2. Tại thư mục dự án Next.js:
-   ```bash
-   npm link @ladosite/grpc-sdk
-   ```
+---
+
+## 📋 3. Bảng Tra Cứu Các Hàm Helper 1-Line
+
+| Lệnh Gọi Direct | Chức Năng | Tự Động Tạo |
+| :--- | :--- | :--- |
+| `sdk.getProductPageData({ slug, baseUrl })` | Lấy chi tiết Sản phẩm (PDP) | Metadata + Schema `Product` & `Breadcrumb` |
+| `sdk.getCategoryPageData({ slug, pageNumber, pageSize })` | Lấy danh sách sản phẩm theo danh mục (PLP) | Metadata + Schema `ItemList` & `Breadcrumb` |
+| `sdk.getBlogPageData({ slug, baseUrl })` | Lấy chi tiết bài viết Blog | Metadata + Schema `Article` & `Breadcrumb` |
+| `sdk.getPageMeta({ url })` | Lấy Metadata SEO của URL bất kỳ | Next.js `Metadata` Object (`title`, `og`, `robots`...) |
+| `sdk.getSitemap({ url })` | Lấy Sitemap hệ thống | Chuẩn `MetadataRoute.Sitemap` cho Next.js |
+
+---
+
+## 🔌 4. Gọi gRPC API Thuần (Direct Call)
+
+Nếu cần gọi trực tiếp các API gRPC thuần (như Đặt hàng, Login, Comment):
+
+```typescript
+// Query danh sách sản phẩm
+const res = await sdk.product.getByQuery({ pageNumber: 1, pageSize: 10, criteria: [], operator: 'AND' });
+
+// Đặt hàng (Transactional API, tự động không bị cache)
+const orderRes = await sdk.order.placeOrder({ /* order data */ });
+```
+
+---
+
+## 🛠 5. Dành cho Maintainer phát triển SDK
+
+```bash
+npm run generate  # Biên dịch file .proto trong thư mục Protos/
+npm run typecheck # Kiểm tra kiểu dữ liệu TypeScript
+npm run build     # Đóng gói sản phẩm ra thư mục dist/
+npm run verify    # Chạy script kiểm thử tự động
+```

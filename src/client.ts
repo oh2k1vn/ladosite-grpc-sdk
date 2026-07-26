@@ -1,6 +1,23 @@
 import { GrpcWebFetchTransport } from '@protobuf-ts/grpcweb-transport';
-import { RpcError } from '@protobuf-ts/runtime-rpc';
-import * as crypto from 'crypto';
+import { RpcError, RpcOptions } from '@protobuf-ts/runtime-rpc';
+import { generateChecksum, DEFAULT_PUBLIC_KEY } from './utils/crypto';
+import {
+  toNextMetadata,
+  generateProductJsonLd,
+  generateBreadcrumbJsonLd,
+  generateItemListJsonLd,
+  generateArticleJsonLd,
+  toNextSitemap,
+} from './utils/seo';
+import type {
+  GrpcFetchOptions,
+  NextMetadata,
+  ProductPageDataResult,
+  CategoryPageDataResult,
+  BlogPageDataResult,
+  EcomPageMetaResult,
+  NextSitemapItem,
+} from './types';
 
 // Import raw service clients
 import { AuthServiceClient } from './generated/Protos/auth.client';
@@ -25,41 +42,6 @@ import type { GetPageViewRequest, PageViewResponse } from './generated/Protos/pa
 import type { BlogDataSourceResponse, BlogResponseWrapped, BlogGroupDataSourceResponse, BlogGroupResponseWrapped } from './generated/Protos/blog';
 import type { ProductDataSourceResponse, ProductResponseWrapped, ProductGroupResponseWrapped, ProductGroupDataSourceResponse } from './generated/Protos/product';
 
-const DEFAULT_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnYmTJKkxl/Yg3gA6SQ91foY5CB50LDXcYrq6Ukx8obTuSuH0RAcg/oSem+gT5G1aakdQqtCkYXSHS9wS8kLK3O4AXFCONED4I8tJ8GKRcxFvytxHTIMmqqa+gw+pbPpmV4Zr+KjLHZsLse0jFIJ+gZ2hR3CrAeJ8Au+3uKySNNZ0F2laJAPso9p/80d4nKhf6N/t3/AU2LirnvWyADQeoaXVRQAv3LVpe6IG+bgijg6Cu4rA1kOUxFSj7nD6n1+QZqS7Fu2WdwFd7DbAr1RQKzpxqwF2p7LTifDUUGLrGF45oslxytwbHyEc36eRx1g9mQIdipkIa1KXdjf51sE2jwIDAQAB
------END PUBLIC KEY-----`;
-
-let cachedChecksum: string | null = null;
-
-function generateChecksum(publicKey: string = DEFAULT_PUBLIC_KEY, values: string = 'web:optiflow_svc'): string {
-  if (cachedChecksum && publicKey === DEFAULT_PUBLIC_KEY && values === 'web:optiflow_svc') {
-    return cachedChecksum;
-  }
-  try {
-    const md5Hash = crypto.createHash('md5').update(values).digest('hex');
-    const padding = 'xxxxx';
-    const rawPayload = padding + md5Hash + padding;
-
-    const encryptedBuffer = crypto.publicEncrypt(
-      {
-        key: publicKey,
-        padding: crypto.constants.RSA_PKCS1_PADDING,
-      },
-      Buffer.from(rawPayload)
-    );
-
-    const result = encryptedBuffer.toString('base64');
-    if (publicKey === DEFAULT_PUBLIC_KEY && values === 'web:optiflow_svc') {
-      cachedChecksum = result;
-    }
-    return result;
-  } catch (error) {
-    console.error('[gRPC Client] Checksum generation failed:', error);
-    return '';
-  }
-}
-
-
 export interface GrpcSDKConfig {
   baseUrl?: string;
   orgId: string;
@@ -70,6 +52,7 @@ export interface GrpcSDKConfig {
   publicKey?: string;
   debug?: boolean;
   token?: string | (() => string | null | undefined);
+  defaultFetchOptions?: GrpcFetchOptions;
 }
 
 export class OptiFlowGrpcSDK {
@@ -77,69 +60,107 @@ export class OptiFlowGrpcSDK {
   private token: string | null = null;
   private tokenGetter?: () => string | null | undefined;
 
-  // Private raw clients to prevent bypass of SDK custom interceptors
-  private readonly rawAuth: AuthServiceClient;
-  private readonly rawBlog: BlogServiceClient;
-  private readonly rawComment: CommentServiceClient;
-  private readonly rawOrder: OrderServiceClient;
-  private readonly rawPageView: PageViewServiceClient;
-  private readonly rawProduct: ProductServiceClient;
-  private readonly rawSeo: SeoServiceClient;
-  private readonly rawTracking: TrackingServiceClient;
-  private readonly rawUserSubmit: UserSubmitServiceClient;
+  // Private lazy instances of raw clients
+  private _rawAuth?: AuthServiceClient;
+  private _rawBlog?: BlogServiceClient;
+  private _rawComment?: CommentServiceClient;
+  private _rawOrder?: OrderServiceClient;
+  private _rawPageView?: PageViewServiceClient;
+  private _rawProduct?: ProductServiceClient;
+  private _rawSeo?: SeoServiceClient;
+  private _rawTracking?: TrackingServiceClient;
+  private _rawUserSubmit?: UserSubmitServiceClient;
 
-  // Public, fully-typed API methods returning direct response promises
+  // Public getters for raw clients (Lazy instantiated)
+  public get rawAuth(): AuthServiceClient {
+    if (!this._rawAuth) this._rawAuth = new AuthServiceClient(this.transport);
+    return this._rawAuth;
+  }
+  public get rawBlog(): BlogServiceClient {
+    if (!this._rawBlog) this._rawBlog = new BlogServiceClient(this.transport);
+    return this._rawBlog;
+  }
+  public get rawComment(): CommentServiceClient {
+    if (!this._rawComment) this._rawComment = new CommentServiceClient(this.transport);
+    return this._rawComment;
+  }
+  public get rawOrder(): OrderServiceClient {
+    if (!this._rawOrder) this._rawOrder = new OrderServiceClient(this.transport);
+    return this._rawOrder;
+  }
+  public get rawPageView(): PageViewServiceClient {
+    if (!this._rawPageView) this._rawPageView = new PageViewServiceClient(this.transport);
+    return this._rawPageView;
+  }
+  public get rawProduct(): ProductServiceClient {
+    if (!this._rawProduct) this._rawProduct = new ProductServiceClient(this.transport);
+    return this._rawProduct;
+  }
+  public get rawSeo(): SeoServiceClient {
+    if (!this._rawSeo) this._rawSeo = new SeoServiceClient(this.transport);
+    return this._rawSeo;
+  }
+  public get rawTracking(): TrackingServiceClient {
+    if (!this._rawTracking) this._rawTracking = new TrackingServiceClient(this.transport);
+    return this._rawTracking;
+  }
+  public get rawUserSubmit(): UserSubmitServiceClient {
+    if (!this._rawUserSubmit) this._rawUserSubmit = new UserSubmitServiceClient(this.transport);
+    return this._rawUserSubmit;
+  }
+
+  // Domain API method wrappers
   public readonly auth: {
-    login: (req: LoginRequest) => Promise<LoginResponse>;
+    login: (req: LoginRequest, options?: RpcOptions) => Promise<LoginResponse>;
   };
 
   public readonly blog: {
-    getByQuery: (req: CommonQuery) => Promise<BlogDataSourceResponse>;
-    getBySlug: (req: GetBySlugRequest) => Promise<BlogResponseWrapped>;
-    getBlogsByBlogGroupSlug: (req: GetBySlugPagedRequest) => Promise<BlogDataSourceResponse>;
-    getBlogGroupsBySlug: (req: GetBySlugRequest) => Promise<BlogGroupResponseWrapped>;
-    getBlogGroupsByQuery: (req: CommonQuery) => Promise<BlogGroupDataSourceResponse>;
+    getByQuery: (req: CommonQuery, options?: RpcOptions) => Promise<BlogDataSourceResponse>;
+    getBySlug: (req: GetBySlugRequest, options?: RpcOptions) => Promise<BlogResponseWrapped>;
+    getBlogsByBlogGroupSlug: (req: GetBySlugPagedRequest, options?: RpcOptions) => Promise<BlogDataSourceResponse>;
+    getBlogGroupsBySlug: (req: GetBySlugRequest, options?: RpcOptions) => Promise<BlogGroupResponseWrapped>;
+    getBlogGroupsByQuery: (req: CommonQuery, options?: RpcOptions) => Promise<BlogGroupDataSourceResponse>;
   };
 
   public readonly comment: {
-    createComment: (req: CreateCommentRequest) => Promise<CreateCommentResponse>;
-    getCommentsByRef: (req: GetCommentsByRefRequest) => Promise<GetCommentsByRefResponse>;
+    createComment: (req: CreateCommentRequest, options?: RpcOptions) => Promise<CreateCommentResponse>;
+    getCommentsByRef: (req: GetCommentsByRefRequest, options?: RpcOptions) => Promise<GetCommentsByRefResponse>;
   };
 
   public readonly order: {
-    placeOrder: (req: PlaceOrderRequest) => Promise<OperationResult>;
-    getMyOrders: (req: CommonQuery) => Promise<GetOrdersResponse>;
-    getOrderDetail: (req: GetOrderRequest) => Promise<OrderDetailResponse>;
-    cancelOrder: (req: CancelOrderRequest) => Promise<OperationResult>;
-    getOrderTracking: (req: GetOrderRequest) => Promise<GetOrderTrackingResponse>;
-    requestRefund: (req: RequestRefundRequest) => Promise<OperationResult>;
-    submitReview: (req: SubmitReviewRequest) => Promise<OperationResult>;
+    placeOrder: (req: PlaceOrderRequest, options?: RpcOptions) => Promise<OperationResult>;
+    getMyOrders: (req: CommonQuery, options?: RpcOptions) => Promise<GetOrdersResponse>;
+    getOrderDetail: (req: GetOrderRequest, options?: RpcOptions) => Promise<OrderDetailResponse>;
+    cancelOrder: (req: CancelOrderRequest, options?: RpcOptions) => Promise<OperationResult>;
+    getOrderTracking: (req: GetOrderRequest, options?: RpcOptions) => Promise<GetOrderTrackingResponse>;
+    requestRefund: (req: RequestRefundRequest, options?: RpcOptions) => Promise<OperationResult>;
+    submitReview: (req: SubmitReviewRequest, options?: RpcOptions) => Promise<OperationResult>;
   };
 
   public readonly pageView: {
-    getPageView: (req: GetPageViewRequest) => Promise<PageViewResponse>;
+    getPageView: (req: GetPageViewRequest, options?: RpcOptions) => Promise<PageViewResponse>;
   };
 
   public readonly product: {
-    getByQuery: (req: CommonQuery) => Promise<ProductDataSourceResponse>;
-    getBySlug: (req: GetBySlugRequest) => Promise<ProductResponseWrapped>;
-    getProductsByProductGroupSlug: (req: GetBySlugPagedRequest) => Promise<ProductDataSourceResponse>;
-    getProductGroupsBySlug: (req: GetBySlugRequest) => Promise<ProductGroupResponseWrapped>;
-    getProductGroupsByQuery: (req: CommonQuery) => Promise<ProductGroupDataSourceResponse>;
+    getByQuery: (req: CommonQuery, options?: RpcOptions) => Promise<ProductDataSourceResponse>;
+    getBySlug: (req: GetBySlugRequest, options?: RpcOptions) => Promise<ProductResponseWrapped>;
+    getProductsByProductGroupSlug: (req: GetBySlugPagedRequest, options?: RpcOptions) => Promise<ProductDataSourceResponse>;
+    getProductGroupsBySlug: (req: GetBySlugRequest, options?: RpcOptions) => Promise<ProductGroupResponseWrapped>;
+    getProductGroupsByQuery: (req: CommonQuery, options?: RpcOptions) => Promise<ProductGroupDataSourceResponse>;
   };
 
   public readonly seo: {
-    getGlobalConfig: (req: Empty) => Promise<SeoGlobalConfigResponse>;
-    getMetaByUrl: (req: GetMetaByUrlRequest) => Promise<SeoPageConfigResponse>;
-    getSitemapData: (req: GetSitemapDataRequest) => Promise<SitemapDataResponse>;
+    getGlobalConfig: (req: Empty, options?: RpcOptions) => Promise<SeoGlobalConfigResponse>;
+    getMetaByUrl: (req: GetMetaByUrlRequest, options?: RpcOptions) => Promise<SeoPageConfigResponse>;
+    getSitemapData: (req: GetSitemapDataRequest, options?: RpcOptions) => Promise<SitemapDataResponse>;
   };
 
   public readonly tracking: {
-    ingestEvent: (req: UserEventRequest) => Promise<OperationResult>;
+    ingestEvent: (req: UserEventRequest, options?: RpcOptions) => Promise<OperationResult>;
   };
 
   public readonly userSubmit: {
-    submit: (req: SubmitRequest) => Promise<OperationResult>;
+    submit: (req: SubmitRequest, options?: RpcOptions) => Promise<OperationResult>;
   };
 
   constructor(config: GrpcSDKConfig) {
@@ -168,6 +189,7 @@ export class OptiFlowGrpcSDK {
               'x-userId': config.userId || 'DEV-LOCAL-001',
               'x-display-name': config.displayName || 'Local Developer',
               'user-agent': config.userAgent || 'QA-Bot',
+              ...(options.meta || {}),
             };
 
             // Dynamically resolve and attach authorization token
@@ -179,7 +201,6 @@ export class OptiFlowGrpcSDK {
               options.meta['authorization'] = `Bearer ${activeToken}`;
             }
 
-            const isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
             const isBrowser = typeof window !== 'undefined';
 
             if (isDebug) {
@@ -215,48 +236,15 @@ export class OptiFlowGrpcSDK {
               },
               (err) => {
                 if (isDebug) {
-                  const isHalted =
-                    err instanceof RpcError &&
-                    (err.message.toLowerCase().includes('halted') ||
-                      err.code === 'UNAVAILABLE' ||
-                      (err.meta &&
-                        Object.values(err.meta).some(
-                          (val) => typeof val === 'string' && val.toLowerCase().includes('halted')
-                        )));
-
                   if (isBrowser) {
                     console.group(
                       `%c[gRPC ERR] ${method.service.typeName}/${method.name}`,
                       'color: #dc2626; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #fee2e2;'
                     );
-                    if (err instanceof RpcError) {
-                      console.error('Error Code:', err.code);
-                      console.error('Error Message:', err.message);
-                      console.error('Metadata:', err.meta);
-                    } else {
-                      console.error(err);
-                    }
+                    console.error(err);
                     console.groupEnd();
                   } else {
-                    if (err instanceof RpcError) {
-                      if (isHalted) {
-                        console.error(
-                          `🔴 [gRPC HALTED ERROR] ${method.service.typeName}/${method.name}\n` +
-                            `Code: ${err.code}\n` +
-                            `Message: ${err.message}\n` +
-                            `Meta:`,
-                          err.meta
-                        );
-                      } else {
-                        console.error(`[gRPC ERR] ${method.service.typeName}/${method.name}`, {
-                          code: err.code,
-                          message: err.message,
-                          meta: err.meta,
-                        });
-                      }
-                    } else {
-                      console.error(`[gRPC ERR] ${method.service.typeName}/${method.name}`, err);
-                    }
+                    console.error(`[gRPC ERR] ${method.service.typeName}/${method.name}`, err);
                   }
                 }
               }
@@ -266,76 +254,67 @@ export class OptiFlowGrpcSDK {
           },
         },
       ],
-      fetch: (input, init) =>
-        fetch(input, {
+      fetch: (input, init) => {
+        const fetchInit: RequestInit = {
           ...init,
-          cache: 'no-store',
-        } as RequestInit),
+          ...(config.defaultFetchOptions as RequestInit),
+        };
+        return fetch(input, fetchInit);
+      },
     });
 
-    // Instantiate raw clients
-    this.rawAuth = new AuthServiceClient(this.transport);
-    this.rawBlog = new BlogServiceClient(this.transport);
-    this.rawComment = new CommentServiceClient(this.transport);
-    this.rawOrder = new OrderServiceClient(this.transport);
-    this.rawPageView = new PageViewServiceClient(this.transport);
-    this.rawProduct = new ProductServiceClient(this.transport);
-    this.rawSeo = new SeoServiceClient(this.transport);
-    this.rawTracking = new TrackingServiceClient(this.transport);
-    this.rawUserSubmit = new UserSubmitServiceClient(this.transport);
-
-    // Initialize wrapped promise clients
+    // Wrapped promise clients using lazy raw client getters
     this.auth = {
-      login: (req) => this.rawAuth.login(req).response,
+      login: (req, options) => this.rawAuth.login(req, options).response,
     };
 
     this.blog = {
-      getByQuery: (req) => this.rawBlog.getBlogsByQuery(req).response,
-      getBySlug: (req) => this.rawBlog.getBlogDetail(req).response,
-      getBlogsByBlogGroupSlug: (req) => this.rawBlog.getBlogsByBlogGroupSlug(req).response,
-      getBlogGroupsBySlug: (req) => this.rawBlog.getBlogGroupsBySlug(req).response,
-      getBlogGroupsByQuery: (req) => this.rawBlog.getBlogGroupsByQuery(req).response,
+      getByQuery: (req, options) => this.rawBlog.getBlogsByQuery(req, options).response,
+      getBySlug: (req, options) => this.rawBlog.getBlogDetail(req, options).response,
+      getBlogsByBlogGroupSlug: (req, options) => this.rawBlog.getBlogsByBlogGroupSlug(req, options).response,
+      getBlogGroupsBySlug: (req, options) => this.rawBlog.getBlogGroupsBySlug(req, options).response,
+      getBlogGroupsByQuery: (req, options) => this.rawBlog.getBlogGroupsByQuery(req, options).response,
     };
 
     this.comment = {
-      createComment: (req) => this.rawComment.createComment(req).response,
-      getCommentsByRef: (req) => this.rawComment.getCommentsByRef(req).response,
+      createComment: (req, options) => this.rawComment.createComment(req, options).response,
+      getCommentsByRef: (req, options) => this.rawComment.getCommentsByRef(req, options).response,
     };
 
     this.order = {
-      placeOrder: (req) => this.rawOrder.placeOrder(req).response,
-      getMyOrders: (req) => this.rawOrder.getMyOrders(req).response,
-      getOrderDetail: (req) => this.rawOrder.getOrderDetail(req).response,
-      cancelOrder: (req) => this.rawOrder.cancelOrder(req).response,
-      getOrderTracking: (req) => this.rawOrder.getOrderTracking(req).response,
-      requestRefund: (req) => this.rawOrder.requestRefund(req).response,
-      submitReview: (req) => this.rawOrder.submitReview(req).response,
+      placeOrder: (req, options) => this.rawOrder.placeOrder(req, options).response,
+      getMyOrders: (req, options) => this.rawOrder.getMyOrders(req, options).response,
+      getOrderDetail: (req, options) => this.rawOrder.getOrderDetail(req, options).response,
+      cancelOrder: (req, options) => this.rawOrder.cancelOrder(req, options).response,
+      getOrderTracking: (req, options) => this.rawOrder.getOrderTracking(req, options).response,
+      requestRefund: (req, options) => this.rawOrder.requestRefund(req, options).response,
+      submitReview: (req, options) => this.rawOrder.submitReview(req, options).response,
     };
 
     this.pageView = {
-      getPageView: (req) => this.rawPageView.getPageView(req).response,
+      getPageView: (req, options) => this.rawPageView.getPageView(req, options).response,
     };
 
     this.product = {
-      getByQuery: (req) => this.rawProduct.getProductsByQuery(req).response,
-      getBySlug: (req) => this.rawProduct.getProductDetail(req).response,
-      getProductsByProductGroupSlug: (req) => this.rawProduct.getProductsByProductGroupSlug(req).response,
-      getProductGroupsBySlug: (req) => this.rawProduct.getProductGroupsBySlug(req).response,
-      getProductGroupsByQuery: (req) => this.rawProduct.getProductGroupsByQuery(req).response,
+      getByQuery: (req, options) => this.rawProduct.getProductsByQuery(req, options).response,
+      getBySlug: (req, options) => this.rawProduct.getProductDetail(req, options).response,
+      getProductsByProductGroupSlug: (req, options) => this.rawProduct.getProductsByProductGroupSlug(req, options).response,
+      getProductGroupsBySlug: (req, options) => this.rawProduct.getProductGroupsBySlug(req, options).response,
+      getProductGroupsByQuery: (req, options) => this.rawProduct.getProductGroupsByQuery(req, options).response,
     };
 
     this.seo = {
-      getGlobalConfig: (req) => this.rawSeo.getGlobalConfig(req).response,
-      getMetaByUrl: (req) => this.rawSeo.getMetaByUrl(req).response,
-      getSitemapData: (req) => this.rawSeo.getSitemapData(req).response,
+      getGlobalConfig: (req, options) => this.rawSeo.getGlobalConfig(req, options).response,
+      getMetaByUrl: (req, options) => this.rawSeo.getMetaByUrl(req, options).response,
+      getSitemapData: (req, options) => this.rawSeo.getSitemapData(req, options).response,
     };
 
     this.tracking = {
-      ingestEvent: (req) => this.rawTracking.ingestEvent(req).response,
+      ingestEvent: (req, options) => this.rawTracking.ingestEvent(req, options).response,
     };
 
     this.userSubmit = {
-      submit: (req) => this.rawUserSubmit.submit(req).response,
+      submit: (req, options) => this.rawUserSubmit.submit(req, options).response,
     };
   }
 
@@ -347,9 +326,169 @@ export class OptiFlowGrpcSDK {
   }
 
   /**
-   * Clear the active authentication token
+   * Clear active authentication token
    */
   public clearToken(): void {
     this.token = null;
+  }
+
+  // =========================================================================
+  // HIGH-LEVEL DIRECT E-COMMERCE PAGE HELPERS (ZERO BOILERPLATE FOR NEXT.JS)
+  // =========================================================================
+
+  /**
+   * 1-Line Helper for Product Detail Pages (PDP) in Next.js App Router
+   * Returns Product data, Next.js Metadata, and Google Schema.org Product & Breadcrumb JSON-LD
+   */
+  public async getProductPageData(
+    params: { slug: string; baseUrl?: string },
+    fetchOptions?: GrpcFetchOptions
+  ): Promise<ProductPageDataResult> {
+    try {
+      const [productRes, seoRes] = await Promise.all([
+        this.product.getBySlug({ slug: params.slug }, fetchOptions as any).catch(() => null),
+        this.seo.getMetaByUrl({ url: `/products/${params.slug}` }, fetchOptions as any).catch(() => null),
+      ]);
+
+      const product = productRes?.data;
+      if (!product) {
+        return { product: null, metadata: null, jsonLdScript: null };
+      }
+
+      const productUrl = params.baseUrl ? `${params.baseUrl}/products/${params.slug}` : undefined;
+      const metadata = toNextMetadata(seoRes, null, {
+        title: product.name,
+        description: product.description,
+        image: product.imgUrl,
+        canonicalUrl: productUrl,
+      });
+
+      const jsonLdScript = [
+        generateProductJsonLd(product, { url: productUrl }),
+        generateBreadcrumbJsonLd([
+          { name: 'Trang chủ', url: params.baseUrl || '/' },
+          { name: product.categoryName || 'Sản phẩm', url: params.baseUrl ? `${params.baseUrl}/categories` : '/categories' },
+          { name: product.name, url: productUrl || '#' },
+        ]),
+      ];
+
+      return { product, metadata, jsonLdScript, error: null };
+    } catch (error: any) {
+      return { product: null, metadata: null, jsonLdScript: null, error };
+    }
+  }
+
+  /**
+   * 1-Line Helper for Category / Product Listing Pages (PLP) in Next.js App Router
+   */
+  public async getCategoryPageData(
+    params: { slug: string; pageNumber?: number; pageSize?: number; baseUrl?: string },
+    fetchOptions?: GrpcFetchOptions
+  ): Promise<CategoryPageDataResult> {
+    try {
+      const pageNumber = params.pageNumber || 1;
+      const pageSize = params.pageSize || 20;
+
+      const [groupRes, productsRes, seoRes] = await Promise.all([
+        this.product.getProductGroupsBySlug({ slug: params.slug }, fetchOptions as any).catch(() => null),
+        this.product.getProductsByProductGroupSlug({ slug: params.slug, pageNumber, pageSize }, fetchOptions as any).catch(() => null),
+        this.seo.getMetaByUrl({ url: `/categories/${params.slug}` }, fetchOptions as any).catch(() => null),
+      ]);
+
+      const productGroup = groupRes?.data;
+      const products = productsRes?.data || [];
+
+      const categoryUrl = params.baseUrl ? `${params.baseUrl}/categories/${params.slug}` : undefined;
+      const metadata = toNextMetadata(seoRes, null, {
+        title: productGroup?.name || 'Danh mục sản phẩm',
+        description: productGroup?.description || '',
+        canonicalUrl: categoryUrl,
+      });
+
+      const jsonLdScript = [
+        generateItemListJsonLd(products, { categoryName: productGroup?.name, baseUrl: params.baseUrl }),
+        generateBreadcrumbJsonLd([
+          { name: 'Trang chủ', url: params.baseUrl || '/' },
+          { name: productGroup?.name || 'Danh mục', url: categoryUrl || '#' },
+        ]),
+      ];
+
+      return { productGroup, products, metadata, jsonLdScript, error: null };
+    } catch (error: any) {
+      return { productGroup: null, products: null, metadata: null, jsonLdScript: null, error };
+    }
+  }
+
+  /**
+   * 1-Line Helper for Generic Page SEO Metadata in Next.js App Router
+   */
+  public async getPageMeta(
+    params: { url: string },
+    fetchOptions?: GrpcFetchOptions
+  ): Promise<EcomPageMetaResult> {
+    try {
+      const seoRes = await this.seo.getMetaByUrl({ url: params.url }, fetchOptions as any);
+      const metadata = toNextMetadata(seoRes);
+
+      return { metadata, jsonLdScript: [], error: null };
+    } catch (error: any) {
+      return { metadata: null, jsonLdScript: null, error };
+    }
+  }
+
+  /**
+   * 1-Line Helper for Blog Article Detail Pages in Next.js App Router
+   */
+  public async getBlogPageData(
+    params: { slug: string; baseUrl?: string },
+    fetchOptions?: GrpcFetchOptions
+  ): Promise<BlogPageDataResult> {
+    try {
+      const [blogRes, seoRes] = await Promise.all([
+        this.blog.getBySlug({ slug: params.slug }, fetchOptions as any).catch(() => null),
+        this.seo.getMetaByUrl({ url: `/blog/${params.slug}` }, fetchOptions as any).catch(() => null),
+      ]);
+
+      const blog = blogRes?.data;
+      if (!blog) {
+        return { blog: null, metadata: null, jsonLdScript: null };
+      }
+
+      const blogUrl = params.baseUrl ? `${params.baseUrl}/blog/${params.slug}` : undefined;
+      const metadata = toNextMetadata(seoRes, null, {
+        title: blog.title,
+        description: blog.shortDescription,
+        image: blog.imgUrl,
+        canonicalUrl: blogUrl,
+      });
+
+      const jsonLdScript = [
+        generateArticleJsonLd(blog, { baseUrl: params.baseUrl }),
+        generateBreadcrumbJsonLd([
+          { name: 'Trang chủ', url: params.baseUrl || '/' },
+          { name: 'Tin tức', url: params.baseUrl ? `${params.baseUrl}/blog` : '/blog' },
+          { name: blog.title, url: blogUrl || '#' },
+        ]),
+      ];
+
+      return { blog, metadata, jsonLdScript, error: null };
+    } catch (error: any) {
+      return { blog: null, metadata: null, jsonLdScript: null, error };
+    }
+  }
+
+  /**
+   * 1-Line Helper for app/sitemap.ts in Next.js App Router
+   */
+  public async getSitemap(
+    params: { url: string },
+    fetchOptions?: GrpcFetchOptions
+  ): Promise<NextSitemapItem[]> {
+    try {
+      const sitemapRes = await this.seo.getSitemapData({ url: params.url }, fetchOptions as any);
+      return toNextSitemap(sitemapRes);
+    } catch {
+      return [];
+    }
   }
 }

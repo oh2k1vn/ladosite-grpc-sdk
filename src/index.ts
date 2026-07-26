@@ -1,10 +1,20 @@
 // Export core SDK client and configuration
 export { OptiFlowGrpcSDK, GrpcSDKConfig } from './client';
 
-// Re-export only the message types (Request/Response interfaces) from Protos.
-// We DO NOT export raw ServiceClient classes from *.client files to maximize security
-// and ensure consumers always route their requests through the secure SDK class wrapper.
+// Export Next.js & E-Commerce SDK types
+export * from './types';
 
+// Export SEO & Schema.org JSON-LD helpers
+export {
+  toNextMetadata,
+  generateProductJsonLd,
+  generateBreadcrumbJsonLd,
+  generateItemListJsonLd,
+  generateArticleJsonLd,
+  toNextSitemap,
+} from './utils/seo';
+
+// Re-export protobuf message types
 export * from './generated/Protos/auth';
 export * from './generated/Protos/blog';
 export * from './generated/Protos/comment';

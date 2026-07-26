@@ -1,6 +1,6 @@
 {
   "name": "@ladosite/grpc-sdk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Standalone gRPC SDK for OptiFlow outsource projects",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
