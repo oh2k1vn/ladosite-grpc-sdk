@@ -1,6 +1,6 @@
 {
   "name": "@ladosite/grpc-sdk",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Standalone gRPC SDK for OptiFlow outsource projects",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -39,10 +39,21 @@
     "@protobuf-ts/runtime": "^2.11.1",
     "@protobuf-ts/runtime-rpc": "^2.11.1"
   },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@protobuf-ts/plugin": "^2.11.1",
     "@types/node": "^20.11.0",
+    "@types/react": "^19.2.17",
+    "next": "^16.2.12",
     "protoc": "^24.4.0",
+    "react": "^19.2.8",
     "tsup": "^8.0.2",
     "tsx": "^4.7.1",
     "typescript": "^5.3.3"

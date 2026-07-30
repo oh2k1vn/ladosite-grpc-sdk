@@ -1,20 +1,10 @@
 # @ladosite/grpc-sdk
 
-Thư viện gRPC SDK chứa các gRPC Client được tự động biên dịch từ định nghĩa Protobuf (`.proto`), giúp các dự án độc lập (Next.js, Node.js...) kết nối và sử dụng các dịch vụ của OptiFlow một cách dễ dàng và đồng bộ.
+Thư viện gRPC SDK chứa các gRPC Client được tự động biên dịch từ định nghĩa Protobuf (`.proto`), giúp các dự án (Next.js, Node.js...) kết nối và sử dụng các dịch vụ của OptiFlow đồng bộ và an toàn.
 
 ---
 
-## 🚀 Tính năng nổi bật
-
-- **Tự động hóa (Auto-generated)**: Client code và Types được tự động tạo từ file `.proto` qua CI/CD GitHub Actions.
-- **Dễ tích hợp (Git-centric)**: Cài đặt trực tiếp qua Git URL mà không cần publish lên NPM Registry công cộng.
-- **Hỗ trợ ESM & CommonJS**: Đóng gói song song bằng `tsup` giúp tương thích hoàn toàn với Next.js (Server Components, Server Actions và Route Handlers).
-
----
-
-## 🛠 Hướng dẫn tích hợp (Consumer)
-
-### 1. Cài đặt qua Git
+## ⚡ 1. Cài đặt
 
 Thêm trực tiếp vào `dependencies` trong `package.json` của dự án:
 
@@ -23,16 +13,18 @@ Thêm trực tiếp vào `dependencies` trong `package.json` của dự án:
   "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#v1.0.0"
 }
 ```
-*Lưu ý: Luôn sử dụng Git Tag (ví dụ `#v1.0.0`) cho môi trường sản xuất (Production) để đảm bảo tính ổn định tối đa. Có thể sử dụng `#develop` cho môi trường phát triển (Dev).*
 
 Sau đó chạy lệnh:
 ```bash
 npm install
 ```
 
-### 2. Khởi tạo & Sử dụng
+---
 
-Khởi tạo SDK (ví dụ tại `src/lib/grpc.ts` trong Next.js):
+## ⚙️ 2. Khởi tạo & Xác thực
+
+### A. Khởi tạo Client
+Ví dụ khởi tạo tại `src/lib/grpc.ts` trong dự án Next.js:
 
 ```typescript
 import 'server-only';
@@ -45,106 +37,100 @@ export const grpcSDK = new OptiFlowGrpcSDK({
 });
 ```
 
-Sử dụng Client để gọi API (trả về Promise trực tiếp):
-
-```typescript
-import { grpcSDK } from '@/lib/grpc';
-import type { PlaceOrderRequest } from '@ladosite/grpc-sdk';
-
-export async function placeOrder(request: PlaceOrderRequest) {
-  try {
-    // SDK tự động đính kèm metadata xác thực và cấu hình cần thiết
-    const response = await grpcSDK.order.placeOrder(request);
-    return response;
-  } catch (error) {
-    console.error('Failed to place order:', error);
-    throw error;
-  }
-}
-```
-
-### 3. Xác thực bằng Token (Authentication & Session)
-
-Khi người dùng đăng nhập và hệ thống cần gọi các API yêu cầu xác thực (ví dụ đặt hàng, thông tin cá nhân), SDK tự động đính kèm token vào header dưới dạng `Authorization: Bearer <token>`. Bạn có thể cấu hình token theo 2 cách dưới đây:
-
-#### Cách A: Sử dụng Token tĩnh hoặc Hàm Getter động khi khởi tạo (Khuyên dùng)
-
-Bạn có thể truyền trực tiếp trường `token` vào cấu hình khởi tạo. Cấu hình này hỗ trợ cả một chuỗi string tĩnh hoặc một hàm callback động (Getter):
-
-- **Hàm Getter động (Khuyên dùng cho Web/Next.js):** Lấy token trực tiếp từ Cookies hoặc Session trên từng request, giúp tránh rò rỉ chéo token giữa các người dùng trong môi trường Server-side.
-- **Token tĩnh:** Hữu ích cho các background worker, script hoặc CLI độc lập.
+### B. Quản lý Token & Session
+SDK tự động đính kèm token vào header `Authorization: Bearer <token>`:
 
 ```typescript
 import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
 import { cookies } from 'next/headers';
 
 export const grpcSDK = new OptiFlowGrpcSDK({
-  baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn',
-  orgId: process.env.OPTIFLOW_ORG_ID || 'xxxxxxxxxxxxxxxx',
+  baseUrl: process.env.OPTIFLOW_GRPC_URL,
+  orgId: process.env.OPTIFLOW_ORG_ID,
   
-  // Cách 1: Hàm Dynamic Getter lấy token theo từng request (Next.js Server Component)
+  // Hàm Dynamic Getter lấy token theo từng request (Next.js Server Component)
   token: () => {
     const cookieStore = cookies();
     return cookieStore.get('auth_token')?.value;
   }
-
-  // Cách 2: Token tĩnh (nếu dùng)
-  // token: 'my_static_token_value'
 });
+
+// Hoặc thiết lập / xóa token động trên client-side instance:
+// grpcSDK.setToken('new_access_token_value');
+// grpcSDK.clearToken();
 ```
 
-#### Cách B: Thiết lập / Xóa token động trên instance (Client-side / Stateful)
+---
 
-Nếu bạn sử dụng SDK dạng Singleton toàn cục trong ứng dụng client-side hoặc stateful client, bạn có thể thiết lập hoặc xoá token trực tiếp bằng phương thức `setToken` và `clearToken`:
+## 🌐 3. Tự động hóa SEO cho Next.js (Zero-Crash)
 
-```typescript
+SDK tích hợp sẵn các helper SEO và React Component giúp tự động fetch API gRPC (`GetGlobalConfig`, `GetMetaByUrl`), sinh ra Next.js `Metadata` chuẩn và tự động chèn các thẻ Tracking Scripts/Schema Markup JSON-LD.
+
+> 🛡 **Khả năng chống sập ứng dụng (Zero-Crash Guarantee):** Các helper SEO tự động bọc `try-catch` an toàn tuyệt đối. Nếu dịch vụ gRPC SEO gặp sự cố (timeout, ngắt kết nối, lỗi server), ứng dụng Next.js **không bị crash (không lỗi 500)** mà âm thầm fallback về metadata an toàn.
+
+### A. Cấu hình SEO tại Root Layout (`app/layout.tsx`)
+
+```tsx
+import type { Metadata } from 'next';
+import { fetchSeoMetadata, fetchSeoData, SeoScripts } from '@ladosite/grpc-sdk';
 import { grpcSDK } from '@/lib/grpc';
 
-// Gọi sau khi người dùng đăng nhập thành công
-grpcSDK.setToken('new_access_token_value');
+// 1. Tự động fetch Global SEO gRPC và sinh Next.js Metadata cho Root Layout
+export async function generateMetadata(): Promise<Metadata> {
+  return await fetchSeoMetadata({ sdk: grpcSDK, fallbackTitle: 'Trang chủ' });
+}
 
-// Gọi khi người dùng đăng xuất (logout)
-grpcSDK.clearToken();
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // 2. Lấy dữ liệu Global SEO để render Tracking Script & Schema JSON-LD
+  const { global } = await fetchSeoData({ sdk: grpcSDK });
+
+  return (
+    <html lang="vi">
+      <head>
+        {/* Tự động chèn GTM, GA4, Meta Pixel & Schema Markup JSON-LD */}
+        <SeoScripts global={global} />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
 ```
 
-## 🧪 Công cụ Thử nghiệm (Playground Sandbox)
+### B. Cấu hình SEO cho Trang chi tiết (Product / Blog) (`app/blog/[slug]/page.tsx`)
 
-SDK tích hợp sẵn một công cụ CLI chạy trực tiếp trên Node.js để kiểm thử các gRPC API cục bộ mà không cần phụ thuộc vào trình duyệt hay dựng proxy server:
+```tsx
+import type { Metadata } from 'next';
+import { fetchSeoMetadata } from '@ladosite/grpc-sdk';
+import { grpcSDK } from '@/lib/grpc';
+
+interface PageProps {
+  params: Promise<{ slug: string }>;
+}
+
+// 1 dòng duy nhất để fetch Page SEO theo URL & sinh Next.js Metadata!
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  return await fetchSeoMetadata({
+    sdk: grpcSDK,
+    url: `/blog/${slug}`,
+    fallbackTitle: 'Chi tiết bài viết',
+  });
+}
+
+export default async function BlogPostPage() {
+  return <div>Nội dung bài viết...</div>;
+}
+```
+
+---
+
+## 🧪 4. Công cụ Thử nghiệm (Playground Sandbox)
+
+SDK tích hợp sẵn công cụ CLI để kiểm thử gRPC API cục bộ trên Node.js mà không cần dựng proxy server:
 
 1. **Khởi chạy CLI**:
    ```bash
    npm run playground
    ```
 2. **Cấu hình Payload**:
-   Các tham số (payload) mẫu của từng API được lưu dưới dạng file JSON độc lập tại thư mục `playground/payloads/` (ví dụ: `playground/payloads/product.getBySlug.json`). 
-   - Bạn có thể sửa trực tiếp nội dung các file JSON này bằng trình chỉnh sửa code (IDE) và lưu lại.
-   - Khi chọn API trên CLI, nó sẽ tải và áp dụng ngay các tham số mới nhất bạn vừa lưu mà không cần khởi động lại CLI.
-
----
-
-## 📦 Quy trình Phát hành Phiên bản Mới (Release)
-
-Khi cập nhật file `.proto` hoặc thay đổi logic SDK, hãy thực hiện quy trình sau để tích hợp vào vận hành an toàn nhất:
-
-### 1. Biên dịch và Kiểm tra cục bộ
-```bash
-# Đồng bộ & Tự động sinh mã nguồn gRPC TypeScript từ Protos
-npm run generate
-
-# Biên dịch SDK và kiểm tra tính toàn vẹn kiểu dữ liệu (typecheck)
-npm run build
-npm run typecheck
-```
-*Lưu ý: Nhờ cơ chế Auto-Mapping Proxy của SDK, các API mới được khai báo trong `.proto` sẽ tự động khả dụng trên đối tượng SDK mà không cần bạn phải viết thêm code map thủ công trong `src/client.ts`.*
-
-### 2. Đẩy mã nguồn lên Git & Đóng Tag
-```bash
-git add .
-git commit -m "feat: cập nhật api x, y, z"
-git push origin develop  # Đẩy lên nhánh dev để test liên thông
-# hoặc git push origin main nếu release trực tiếp
-
-# Đóng gói version (Ví dụ v1.0.1)
-git tag v1.0.1
-git push origin v1.0.1
-```
+   Các tham số mẫu của từng API được lưu tại `playground/payloads/*.json`. Bạn có thể chỉnh sửa trực tiếp các file JSON này và CLI sẽ áp dụng ngay lập tức mà không cần khởi động lại.
