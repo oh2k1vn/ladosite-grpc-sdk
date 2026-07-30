@@ -128,3 +128,85 @@ export async function fetchSeoData(options: FetchSeoOptions = {}): Promise<Fetch
         metadata,
     };
 }
+
+export interface FetchSitemapOptions {
+    /**
+     * Instance của OptiFlowGrpcSDK.
+     */
+    sdk?: OptiFlowGrpcSDK;
+    /**
+     * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
+     */
+    seoClient?: WrappedSeoServiceClient;
+    /**
+     * URL request hoặc Base URL truyền vào API gRPC GetSitemapData.
+     * Ví dụ: "https://ladosite.vn" hoặc URL request hiện tại.
+     */
+    url?: string;
+    /**
+     * Request object trong Route Handler của Next.js (nếu có).
+     */
+    request?: Request;
+}
+
+/**
+ * Tự động fetch XML sitemap từ gRPC API (GetSitemapData) với cơ chế bọc try-catch tuyệt đối an toàn.
+ * Trả về chuỗi XML chuẩn. Nếu gặp sự cố gRPC API, trả về sitemap XML khung mặc định an toàn.
+ */
+export async function fetchSitemapXml(options: FetchSitemapOptions = {}): Promise<string> {
+    const { sdk, request } = options;
+    const seoClient = options.seoClient || sdk?.seo;
+
+    let targetUrl = options.url || "";
+    if (!targetUrl && request) {
+        try {
+            targetUrl = request.url;
+        } catch {
+            targetUrl = "";
+        }
+    }
+
+    if (seoClient) {
+        try {
+            const res = await seoClient.getSitemapData({ url: targetUrl });
+            if (res?.success && res.xmlContent) {
+                return res.xmlContent;
+            }
+        } catch (err) {
+            console.warn("[OptiFlow SDK] GetSitemapData failed safely:", err);
+        }
+    }
+
+    // Fallback XML sitemap an toàn khi không fetch được từ API
+    let domain = "https://optiflow.vn";
+    if (targetUrl) {
+        try {
+            domain = new URL(targetUrl).origin;
+        } catch {
+            domain = targetUrl;
+        }
+    }
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${domain}</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`;
+}
+
+/**
+ * Helper tạo Web Standard Response (chuẩn XML) cho Next.js Route Handler (`app/sitemap.xml/route.ts`).
+ * Trả về Response với Content-Type: application/xml và Cache-Control tối ưu.
+ */
+export async function handleSitemapRequest(options: FetchSitemapOptions = {}): Promise<Response> {
+    const xmlContent = await fetchSitemapXml(options);
+    return new Response(xmlContent, {
+        headers: {
+            "Content-Type": "application/xml; charset=utf-8",
+            "Cache-Control": "public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400",
+        },
+    });
+}
+

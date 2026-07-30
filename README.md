@@ -122,7 +122,35 @@ export default async function BlogPostPage() {
 }
 ```
 
+### C. Cấu hình Sitemap XML & Sub-Sitemaps Tự động
+
+1. **Root Sitemap Index (`app/sitemap.xml/route.ts`)**:
+```tsx
+import { handleSitemapRequest } from '@ladosite/grpc-sdk';
+import { grpcSDK } from '@/lib/grpc';
+
+export async function GET(request: Request) {
+  return await handleSitemapRequest({ sdk: grpcSDK, request });
+}
+```
+
+2. **Dynamic Sub-Sitemaps (`app/[slug]/route.ts`)** xử lý các sitemap con (`page_sitemap.xml`, `blog_sitemap.xml`, `product_sitemap.xml`,...):
+```tsx
+import { handleSitemapRequest } from '@ladosite/grpc-sdk';
+import { grpcSDK } from '@/lib/grpc';
+
+export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  if (slug.endsWith('.xml')) {
+    return await handleSitemapRequest({ sdk: grpcSDK, request });
+  }
+  return new Response('Not Found', { status: 404 });
+}
+```
+
 ---
+
+
 
 ## 🧪 4. Công cụ Thử nghiệm (Playground Sandbox)
 
