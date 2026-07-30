@@ -29,3 +29,8 @@ export type * from './generated/Protos/product.client';
 export type * from './generated/Protos/seo.client';
 export type * from './generated/Protos/tracking.client';
 export type * from './generated/Protos/user_submit.client';
+
+// Export SEO helpers & components
+export * from './seo/seoHelper';
+export * from './seo/generateMetadata';
+export * from './seo/SeoScripts';
