@@ -21,6 +21,26 @@ function buildUrl(baseUrl?: string, path?: string): string {
   return cleanPath ? `${cleanBase}/${cleanPath}` : cleanBase;
 }
 
+function extractTwitterHandle(global?: SeoGlobalConfigData): string | undefined {
+  if (!global?.socialLinks) return undefined;
+  const links = global.socialLinks;
+  const twitterVal =
+    links['twitter'] ||
+    links['twitter:site'] ||
+    links['twitter:creator'] ||
+    links['X'] ||
+    links['x'];
+  if (!twitterVal) return undefined;
+  if (twitterVal.startsWith('@')) return twitterVal;
+  try {
+    const url = new URL(twitterVal);
+    const handle = url.pathname.replace(/^\/+/, '').split('/')[0];
+    return handle ? `@${handle}` : undefined;
+  } catch {
+    return twitterVal.includes('/') ? undefined : `@${twitterVal}`;
+  }
+}
+
 export function generateMetadata(input?: SeoOptions): Metadata {
   if (!input) return {} as Metadata;
 
@@ -34,6 +54,21 @@ export function generateMetadata(input?: SeoOptions): Metadata {
     input.page && 'data' in input.page && input.page.data
       ? input.page.data
       : (input.page as SeoPageConfigData | undefined);
+
+  const googleVerification = global?.googleSiteVerificationId
+    ? { google: global.googleSiteVerificationId }
+    : undefined;
+
+  const twitterHandle = extractTwitterHandle(global);
+  const logoUrl =
+    global?.logo?.url || global?.defaultImage || global?.openGraph?.image;
+
+  const icons = logoUrl
+    ? {
+        icon: logoUrl,
+        apple: logoUrl,
+      }
+    : undefined;
 
   // =========================================================================
   // 1. DÀNH CHO PAGE (Metadata riêng cho 1 trang chi tiết)
@@ -59,6 +94,20 @@ export function generateMetadata(input?: SeoOptions): Metadata {
       page?.openGraph?.siteName || global?.siteName || global?.brandName || '';
     const locale = page?.openGraph?.locale || global?.locale || 'vi_VN';
 
+    let ogType: 'website' | 'article' = 'website';
+    if (
+      page?.openGraph?.type === 'article' ||
+      page?.entityType === 'article' ||
+      page?.entityType === 'blog'
+    ) {
+      ogType = 'article';
+    } else if (page?.openGraph?.type) {
+      ogType = page.openGraph.type as 'website';
+    }
+
+    const alternateLangs = (page as unknown as Record<string, unknown>)
+      ?.alternateLanguages as Record<string, string> | undefined;
+
     return {
       title,
       description,
@@ -67,8 +116,11 @@ export function generateMetadata(input?: SeoOptions): Metadata {
         ((page as unknown as Record<string, unknown>)
           ?.seoKeywordList as string[]) ||
         [],
+      icons,
+      verification: googleVerification,
       alternates: {
         canonical: page?.canonicalUrl || pageUrl,
+        languages: alternateLangs,
       },
       openGraph: {
         title: ogTitle,
@@ -76,7 +128,7 @@ export function generateMetadata(input?: SeoOptions): Metadata {
         url: pageUrl,
         siteName,
         locale,
-        type: (page?.openGraph?.type as unknown as 'website') || 'website',
+        type: ogType,
         images: ogImage
           ? {
               width: 1200,
@@ -92,6 +144,8 @@ export function generateMetadata(input?: SeoOptions): Metadata {
       },
       twitter: {
         card: 'summary_large_image',
+        site: twitterHandle,
+        creator: twitterHandle,
         title: ogTitle,
         description: ogDescription,
         images: ogImage ? [ogImage] : [],
@@ -124,6 +178,8 @@ export function generateMetadata(input?: SeoOptions): Metadata {
       },
       description,
       keywords: [],
+      icons,
+      verification: googleVerification,
       alternates: {
         canonical: global?.domain || '',
       },
@@ -153,6 +209,8 @@ export function generateMetadata(input?: SeoOptions): Metadata {
       },
       twitter: {
         card: 'summary_large_image',
+        site: twitterHandle,
+        creator: twitterHandle,
         title: ogTitle,
         description: ogDescription,
         images: ogImage ? [ogImage] : [],
@@ -162,3 +220,4 @@ export function generateMetadata(input?: SeoOptions): Metadata {
 
   return {} as Metadata;
 }
+

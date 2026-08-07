@@ -14,6 +14,66 @@ export interface SeoScriptsProps {
   page?: SeoPageConfigResponse | SeoPageConfigData;
 }
 
+function buildDefaultSchema(global?: SeoGlobalConfigData): object | undefined {
+  if (!global) return undefined;
+  const name = global.siteName || global.brandName || global.defaultTitle;
+  if (!name && !global.domain) return undefined;
+
+  const schema: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type':
+      global.address?.streetAddress || global.geoLatitude
+        ? 'LocalBusiness'
+        : 'Organization',
+    name: name || 'Organization',
+    url: global.domain || undefined,
+    logo: global.logo?.url || global.defaultImage || undefined,
+    description: global.description || global.defaultDescription || undefined,
+  };
+
+  if (
+    global.address &&
+    (global.address.streetAddress || global.address.addressCountry)
+  ) {
+    schema['address'] = {
+      '@type': 'PostalAddress',
+      streetAddress: global.address.streetAddress || undefined,
+      addressRegion: global.address.addressRegion || undefined,
+      postalCode: global.address.postalCode || undefined,
+      addressCountry: global.address.addressCountry || undefined,
+    };
+  }
+
+  if (global.geoLatitude && global.geoLongitude) {
+    schema['geo'] = {
+      '@type': 'GeoCoordinates',
+      latitude: global.geoLatitude,
+      longitude: global.geoLongitude,
+    };
+  }
+
+  if (global.contactPoints && global.contactPoints.length > 0) {
+    schema['contactPoint'] = global.contactPoints.map((cp) => ({
+      '@type': 'ContactPoint',
+      telephone: cp.telephone || undefined,
+      contactType: cp.contactType || undefined,
+      email: cp.email || undefined,
+      areaServed: cp.areaServed || undefined,
+    }));
+  }
+
+  if (global.socialLinks) {
+    const sameAs = Object.values(global.socialLinks).filter(
+      (url) => typeof url === 'string' && url.startsWith('http')
+    );
+    if (sameAs.length > 0) {
+      schema['sameAs'] = sameAs;
+    }
+  }
+
+  return schema;
+}
+
 export function SeoScripts(props: SeoScriptsProps): React.JSX.Element | null {
   const global: SeoGlobalConfigData | undefined =
     props.global && 'data' in props.global && props.global.data
@@ -33,6 +93,11 @@ export function SeoScripts(props: SeoScriptsProps): React.JSX.Element | null {
   if (rawSchema) {
     schemaHtml =
       typeof rawSchema === 'string' ? rawSchema : JSON.stringify(rawSchema);
+  } else {
+    const autoSchema = buildDefaultSchema(global);
+    if (autoSchema) {
+      schemaHtml = JSON.stringify(autoSchema);
+    }
   }
 
   if (!scripts && !schemaHtml) return null;
@@ -73,3 +138,4 @@ export function SeoScripts(props: SeoScriptsProps): React.JSX.Element | null {
     </React.Fragment>
   );
 }
+

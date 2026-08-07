@@ -226,3 +226,74 @@ export async function handleSitemapRequest(
     },
   });
 }
+
+export interface FetchRobotsOptions {
+  /**
+   * Instance của OptiFlowGrpcSDK.
+   */
+  sdk?: OptiFlowGrpcSDK;
+  /**
+   * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
+   */
+  seoClient?: WrappedSeoServiceClient;
+  /**
+   * Dữ liệu Global SEO đã fetch sẵn (nếu có).
+   */
+  global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
+}
+
+/**
+ * Fetch nội dung robots.txt từ gRPC Global SEO Config với cơ chế try-catch an toàn tuyệt đối.
+ * Nếu API gặp sự cố, trả về nội dung robots.txt mặc định an toàn.
+ */
+export async function fetchRobotsTxt(
+  options: FetchRobotsOptions = {}
+): Promise<string> {
+  let globalData: SeoGlobalConfigData | undefined =
+    options.global && 'data' in options.global && options.global.data
+      ? options.global.data
+      : (options.global as SeoGlobalConfigData | undefined);
+
+  const { sdk } = options;
+  const seoClient = options.seoClient || sdk?.seo;
+
+  if (!globalData && seoClient) {
+    try {
+      const res = await seoClient.getGlobalConfig({});
+      if (res?.success && res.data) {
+        globalData = res.data;
+      }
+    } catch (err) {
+      console.warn(
+        '[OptiFlow SDK] GetGlobalConfig for Robots.txt failed safely:',
+        err
+      );
+    }
+  }
+
+  if (globalData?.robotsTxtContent) {
+    return globalData.robotsTxtContent;
+  }
+
+  const domain = globalData?.domain || 'https://optiflow.vn';
+  const cleanDomain = domain.replace(/\/+$/, '');
+  return `User-agent: *\nAllow: /\n\nSitemap: ${cleanDomain}/sitemap.xml\n`;
+}
+
+/**
+ * Helper tạo Web Standard Response (chuẩn text/plain) cho Next.js Route Handler (`app/robots.txt/route.ts`).
+ * Trả về Response với Content-Type: text/plain và Cache-Control tối ưu.
+ */
+export async function handleRobotsTxtRequest(
+  options: FetchRobotsOptions = {}
+): Promise<Response> {
+  const robotsContent = await fetchRobotsTxt(options);
+  return new Response(robotsContent, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control':
+        'public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400',
+    },
+  });
+}
+
