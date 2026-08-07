@@ -1,6 +1,6 @@
 # @ladosite/grpc-sdk
 
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](https://github.com/oh2k1vn/ladosite-grpc-sdk)
+[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](https://github.com/oh2k1vn/ladosite-grpc-sdk)
 [![gRPC Web](https://img.shields.io/badge/gRPC--Web-Protobuf--ts-green.svg)](https://github.com/timostamm/protobuf-ts)
 
 Thư viện gRPC SDK chứa các gRPC Client được tự động biên dịch từ định nghĩa Protobuf (`.proto`), giúp các dự án (Next.js, Node.js...) kết nối và sử dụng hệ thống dịch vụ OptiFlow đồng bộ, bảo mật và an toàn.
@@ -13,7 +13,7 @@ Khai báo trực tiếp vào `dependencies` trong `package.json` của dự án:
 
 ```json
 "dependencies": {
-  "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#v0.1.2"
+  "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#v0.1.3"
 }
 ```
 
