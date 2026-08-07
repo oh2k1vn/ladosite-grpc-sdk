@@ -156,9 +156,103 @@ export interface FetchSitemapOptions {
    */
   url?: string;
   /**
+   * Tùy chọn truyền Domain chính thức để override nếu request bị nhận diện IP nội bộ 0.0.0.0.
+   * Ví dụ: "https://ladosite.vn"
+   */
+  domain?: string;
+  /**
    * Request object trong Route Handler của Next.js (nếu có).
    */
   request?: Request;
+}
+
+function isLocalHost(host: string): boolean {
+  return (
+    host.includes('0.0.0.0') ||
+    host.includes('127.0.0.1') ||
+    host.includes('localhost')
+  );
+}
+
+/**
+ * Helper bóc tách và giải mã Public Domain chuẩn từ Request Headers (x-forwarded-host, host, x-forwarded-proto)
+ * hoặc từ Option / Environment variables để tránh bị dính IP 0.0.0.0 / localhost khi chạy trong Docker/Reverse Proxy.
+ */
+export function resolvePublicUrl(
+  urlOption?: string,
+  request?: Request,
+  domainOption?: string
+): { targetUrl: string; originDomain: string } {
+  let envDomain =
+    domainOption ||
+    (typeof process !== 'undefined' &&
+      (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL)) ||
+    '';
+
+  if (
+    envDomain &&
+    !envDomain.startsWith('http://') &&
+    !envDomain.startsWith('https://')
+  ) {
+    envDomain = `https://${envDomain}`;
+  }
+  envDomain = envDomain.replace(/\/+$/, '');
+
+  let targetUrl = urlOption || '';
+
+  if (!targetUrl && request) {
+    try {
+      const headers = request.headers;
+      const rawForwardedHost =
+        headers.get('x-forwarded-host') || headers.get('host') || '';
+      const forwardedHost = rawForwardedHost.split(',')[0].trim();
+
+      const rawForwardedProto = headers.get('x-forwarded-proto') || 'https';
+      const forwardedProto = rawForwardedProto.split(',')[0].trim();
+
+      const parsedUrl = new URL(request.url);
+
+      if (forwardedHost && !isLocalHost(forwardedHost)) {
+        targetUrl = `${forwardedProto}://${forwardedHost}${parsedUrl.pathname}${parsedUrl.search}`;
+      } else if (envDomain) {
+        targetUrl = `${envDomain}${parsedUrl.pathname}${parsedUrl.search}`;
+      } else {
+        targetUrl = request.url;
+      }
+    } catch {
+      targetUrl = request.url || '';
+    }
+  }
+
+  // Nếu targetUrl vẫn chứa IP nội bộ (0.0.0.0, 127.0.0.1, localhost) mà có envDomain thì đè domain thật vào
+  if (targetUrl) {
+    try {
+      const parsed = new URL(targetUrl);
+      if (isLocalHost(parsed.host) && envDomain) {
+        targetUrl = `${envDomain}${parsed.pathname}${parsed.search}`;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  let originDomain = envDomain;
+  if (targetUrl) {
+    try {
+      const parsed = new URL(targetUrl);
+      if (!isLocalHost(parsed.host)) {
+        originDomain = parsed.origin;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!originDomain) {
+    originDomain = 'https://optiflow.vn';
+  }
+
+  return { targetUrl, originDomain };
 }
 
 /**
@@ -171,39 +265,41 @@ export async function fetchSitemapXml(
   const { sdk, request } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
-  let targetUrl = options.url || '';
-  if (!targetUrl && request) {
-    try {
-      targetUrl = request.url;
-    } catch {
-      targetUrl = '';
-    }
-  }
+  const { targetUrl, originDomain } = resolvePublicUrl(
+    options.url,
+    request,
+    options.domain
+  );
+
+  let xmlContent: string | undefined;
 
   if (seoClient) {
     try {
       const res = await seoClient.getSitemapData({ url: targetUrl });
       if (res?.success && res.xmlContent) {
-        return res.xmlContent;
+        xmlContent = res.xmlContent;
       }
     } catch (err) {
       console.warn('[OptiFlow SDK] GetSitemapData failed safely:', err);
     }
   }
 
-  // Fallback XML sitemap an toàn khi không fetch được từ API
-  let domain = 'https://optiflow.vn';
-  if (targetUrl) {
-    try {
-      domain = new URL(targetUrl).origin;
-    } catch {
-      domain = targetUrl;
+  if (xmlContent) {
+    // Tự động làm sạch và thay thế IP nội bộ (0.0.0.0:4001, localhost...) trong XML trả về bằng public domain thật
+    if (originDomain && originDomain !== 'https://optiflow.vn') {
+      xmlContent = xmlContent.replace(
+        /https?:\/\/(?:0\.0\.0\.0|127\.0\.0\.1|localhost)(?::\d+)?/g,
+        originDomain
+      );
     }
+    return xmlContent;
   }
+
+  // Fallback XML sitemap an toàn khi không fetch được từ API
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>${domain}</loc>
+    <loc>${originDomain}</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
@@ -240,6 +336,14 @@ export interface FetchRobotsOptions {
    * Dữ liệu Global SEO đã fetch sẵn (nếu có).
    */
   global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
+  /**
+   * Tùy chọn truyền Domain chính thức để override (ví dụ: "https://ladosite.vn").
+   */
+  domain?: string;
+  /**
+   * Request object trong Route Handler của Next.js (nếu có).
+   */
+  request?: Request;
 }
 
 /**
@@ -254,8 +358,14 @@ export async function fetchRobotsTxt(
       ? options.global.data
       : (options.global as SeoGlobalConfigData | undefined);
 
-  const { sdk } = options;
+  const { sdk, request } = options;
   const seoClient = options.seoClient || sdk?.seo;
+
+  const { originDomain } = resolvePublicUrl(
+    undefined,
+    request,
+    options.domain || globalData?.domain
+  );
 
   if (!globalData && seoClient) {
     try {
@@ -271,13 +381,20 @@ export async function fetchRobotsTxt(
     }
   }
 
-  if (globalData?.robotsTxtContent) {
-    return globalData.robotsTxtContent;
+  let content = globalData?.robotsTxtContent;
+
+  if (!content) {
+    const domain = globalData?.domain || originDomain;
+    const cleanDomain = domain.replace(/\/+$/, '');
+    content = `User-agent: *\nAllow: /\n\nSitemap: ${cleanDomain}/sitemap.xml\n`;
+  } else if (originDomain && originDomain !== 'https://optiflow.vn') {
+    content = content.replace(
+      /https?:\/\/(?:0\.0\.0\.0|127\.0\.0\.1|localhost)(?::\d+)?/g,
+      originDomain
+    );
   }
 
-  const domain = globalData?.domain || 'https://optiflow.vn';
-  const cleanDomain = domain.replace(/\/+$/, '');
-  return `User-agent: *\nAllow: /\n\nSitemap: ${cleanDomain}/sitemap.xml\n`;
+  return content;
 }
 
 /**
@@ -296,4 +413,5 @@ export async function handleRobotsTxtRequest(
     },
   });
 }
+
 
