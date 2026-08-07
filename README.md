@@ -32,6 +32,7 @@ Khởi tạo instance tập trung tại `src/lib/grpc.ts` trong dự án Next.js
 ```typescript
 import 'server-only';
 import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
+// Hoặc sử dụng helper factory function: import { grpcSDK } from '@ladosite/grpc-sdk';
 
 export const grpcSDK = new OptiFlowGrpcSDK({
   baseUrl: process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn',
@@ -65,29 +66,63 @@ export const grpcSDK = new OptiFlowGrpcSDK({
 
 ---
 
-## 📦 3. Các gRPC Services Có Sẵn
+## 📦 3. Các gRPC Services & Phương thức Cung cấp
 
 SDK bọc sẵn các Service Clients qua `sdk.<service>`:
 
-| Service Property | Dịch vụ gRPC | Mô tả |
-| :--- | :--- | :--- |
-| `sdk.seo` | `SeoService` | Lấy SEO Metadata Global, Page SEO, XML Sitemap |
-| `sdk.auth` | `AuthService` | Đăng nhập, đăng ký, xác thực token |
-| `sdk.blog` | `BlogService` | Quản lý bài viết, danh mục blog |
-| `sdk.product` | `ProductService` | Quản lý sản phẩm, danh mục hàng hóa |
-| `sdk.order` | `OrderService` | Đặt hàng, theo dõi đơn hàng |
-| `sdk.comment` | `CommentService` | Bình luận, đánh giá |
-| `sdk.pageView` | `PageViewService` | Ghi nhận lượt xem trang |
-| `sdk.tracking` | `TrackingService` | Theo dõi sự kiện người dùng (Analytics) |
-| `sdk.userSubmit` | `UserSubmitService` | Xử lý form liên hệ, thu thập lead |
+| Service Property | Dịch vụ gRPC | Phương thức API chính | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `sdk.seo` | `SeoService` | `getGlobalConfig()`, `getMetaByUrl()`, `getSitemapData()` | SEO Metadata Global, Page SEO, XML Sitemap |
+| `sdk.auth` | `AuthService` | `login()` | Đăng nhập và xác thực token |
+| `sdk.blog` | `BlogService` | `getBlogsByQuery()`, `getBlogDetail()`, `getBlogGroupsByQuery()`, `getBlogGroupsBySlug()` | Bài viết blog, danh mục bài viết |
+| `sdk.product` | `ProductService` | `getProductsByQuery()`, `getProductDetail()`, `getProductGroupsByQuery()`, `getProductGroupsBySlug()` | Sản phẩm, danh mục sản phẩm |
+| `sdk.order` | `OrderService` | `placeOrder()`, `getMyOrders()`, `getOrderDetail()`, `cancelOrder()`, `getOrderTracking()`, `requestRefund()`, `submitReview()` | Đặt hàng và quản lý đơn hàng |
+| `sdk.comment` | `CommentService` | `createComment()`, `getCommentsByRef()` | Bình luận và đánh giá sản phẩm/bài viết |
+| `sdk.pageView` | `PageViewService` | `getPageView()` | Thống kê lượt xem trang |
+| `sdk.tracking` | `TrackingService` | `ingestEvent()` | Ghi nhận sự kiện người dùng (Analytics) |
+| `sdk.userSubmit` | `UserSubmitService` | `submit()` | Xử lý form liên hệ, thu thập thông tin lead |
 
 ---
 
-## 🌐 4. Tự động hóa SEO cho Next.js (Zero-Crash)
+## 🔍 4. Cấu trúc Query, Criteria & Sorting
+
+Để truy vấn dữ liệu dạng danh sách (Blog, Product,...), SDK export sẵn các type từ `./criteria`:
+
+```typescript
+import type { Query, Criteria, Sort } from '@ladosite/grpc-sdk';
+
+const query: Query = {
+  pageNumber: 1,
+  pageSize: 10,
+  criteria: [
+    { field: 'status', value: 'published', type: 'equal' }
+  ],
+  sort: { field: 'createdAt', order: 'desc' }
+};
+
+const response = await grpcSDK.blog.getBlogsByQuery({ query });
+```
+
+---
+
+## 🌐 5. Tự động hóa SEO cho Next.js (Zero-Crash)
 
 SDK tích hợp sẵn các helper SEO và React Component giúp tự động fetch API gRPC (`GetGlobalConfig`, `GetMetaByUrl`), sinh ra Next.js `Metadata` chuẩn và tự động chèn các thẻ Tracking Scripts/Schema Markup JSON-LD.
 
 > 🛡 **Khả năng chống sập ứng dụng (Zero-Crash Guarantee):** Các helper SEO tự động bọc `try-catch` an toàn tuyệt đối. Nếu dịch vụ gRPC SEO gặp sự cố (timeout, ngắt kết nối, lỗi server), ứng dụng Next.js **không bị crash (không lỗi 500)** mà âm thầm fallback về metadata an toàn.
+
+### Các hàm SEO Helper được Export trong `src/index.ts`:
+
+- **`fetchSeoMetadata(options)`**: Hàm `async` tự động fetch gRPC API SEO (Global + Page) và trả về Next.js `Metadata` hoàn chỉnh. (Khuyên dùng cho `generateMetadata` trong Next.js).
+- **`fetchSeoData(options)`**: Hàm `async` fetch đầy đủ `{ global, page, metadata }` để dùng song song cho cả `generateMetadata` và `<SeoScripts />`.
+- **`generateMetadata(options)`**: Hàm thuần (synchronous) chuyển đổi từ dữ liệu DTO `{ global, page }` có sẵn thành Next.js `Metadata`.
+- **`handleSitemapRequest(options)`**: Hàm `async` tạo Web Standard `Response` (Content-Type: `application/xml`) phục vụ Route Handler `app/sitemap.xml/route.ts`.
+- **`fetchSitemapXml(options)`**: Hàm `async` trả về chuỗi XML sitemap thô.
+- **`handleRobotsTxtRequest(options)`**: Hàm `async` tạo Web Standard `Response` (Content-Type: `text/plain`) phục vụ Route Handler `app/robots.txt/route.ts`.
+- **`fetchRobotsTxt(options)`**: Hàm `async` trả về chuỗi nội dung `robots.txt` thô.
+- **`<SeoScripts />`**: React Component tự động chèn GTM, GA4, Meta Pixel & JSON-LD Schema Markup vào HTML `<head>`.
+
+---
 
 ### A. Cấu hình SEO tại Root Layout (`app/layout.tsx`)
 
@@ -143,9 +178,8 @@ export default async function BlogPostPage() {
 }
 ```
 
-### C. Cấu hình Sitemap XML & Sub-Sitemaps Tự động
+### C. Cấu hình Sitemap XML & Sub-Sitemaps Tự động (`app/sitemap.xml/route.ts`)
 
-1. **Root Sitemap Index (`app/sitemap.xml/route.ts`)**:
 ```tsx
 import { handleSitemapRequest } from '@ladosite/grpc-sdk';
 import { grpcSDK } from '@/lib/grpc';
@@ -155,7 +189,8 @@ export async function GET(request: Request) {
 }
 ```
 
-2. **Dynamic Sub-Sitemaps (`app/[slug]/route.ts`)** xử lý các sitemap con (`page_sitemap.xml`, `blog_sitemap.xml`, `product_sitemap.xml`,...):
+Và dynamic sub-sitemap handler (`app/[slug]/route.ts`):
+
 ```tsx
 import { handleSitemapRequest } from '@ladosite/grpc-sdk';
 import { grpcSDK } from '@/lib/grpc';
@@ -169,16 +204,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 }
 ```
 
+### D. Cấu hình Robots.txt Tự động (`app/robots.txt/route.ts`)
+
+```tsx
+import { handleRobotsTxtRequest } from '@ladosite/grpc-sdk';
+import { grpcSDK } from '@/lib/grpc';
+
+export async function GET() {
+  return await handleRobotsTxtRequest({ sdk: grpcSDK });
+}
+```
+
 ---
 
-## 📋 5. Tài liệu Bổ sung cho Backend
+## 📋 6. Tài liệu Bổ sung cho Backend
 
 Để xem chi tiết danh sách các trường gRPC Protobuf cần bổ sung cho module SEO (hreflang, Twitter cards, Sitemap priority...), vui lòng tham khảo file:
 - **[BACKEND_SEO_REQUIREMENTS.md](BACKEND_SEO_REQUIREMENTS.md)**
 
 ---
 
-## 🧪 6. Công cụ Thử nghiệm (Playground Sandbox)
+## 🧪 7. Công cụ Thử nghiệm (Playground Sandbox)
 
 SDK tích hợp sẵn công cụ CLI và Server Web để kiểm thử gRPC API cục bộ trên Node.js mà không cần dựng proxy server:
 
@@ -192,3 +238,4 @@ SDK tích hợp sẵn công cụ CLI và Server Web để kiểm thử gRPC API 
    ```
 3. **Cấu hình Payload**:
    Các tham số mẫu của từng API được lưu tại `playground/payloads/*.json`. Bạn có thể chỉnh sửa trực tiếp các file JSON này và CLI sẽ áp dụng ngay lập tức mà không cần khởi động lại.
+
