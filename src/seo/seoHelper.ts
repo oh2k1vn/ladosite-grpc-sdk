@@ -174,6 +174,15 @@ function isLocalHost(host: string): boolean {
   );
 }
 
+function cleanDomainUrl(domain: string): string {
+  let cleaned = domain.trim();
+  if (!cleaned) return '';
+  if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+    cleaned = `https://${cleaned}`;
+  }
+  return cleaned.replace(/\/+$/, '');
+}
+
 /**
  * Helper bóc tách và giải mã Public Domain chuẩn từ Request Headers (x-forwarded-host, host, x-forwarded-proto)
  * hoặc từ Option / Environment variables để tránh bị dính IP 0.0.0.0 / localhost khi chạy trong Docker/Reverse Proxy.
@@ -189,14 +198,7 @@ export function resolvePublicUrl(
       (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL)) ||
     '';
 
-  if (
-    envDomain &&
-    !envDomain.startsWith('http://') &&
-    !envDomain.startsWith('https://')
-  ) {
-    envDomain = `https://${envDomain}`;
-  }
-  envDomain = envDomain.replace(/\/+$/, '');
+  envDomain = cleanDomainUrl(envDomain);
 
   let targetUrl = urlOption || '';
 
@@ -248,16 +250,12 @@ export function resolvePublicUrl(
     }
   }
 
-  if (!originDomain) {
-    originDomain = 'https://optiflow.vn';
-  }
-
   return { targetUrl, originDomain };
 }
 
 /**
  * Tự động fetch XML sitemap từ gRPC API (GetSitemapData) với cơ chế bọc try-catch tuyệt đối an toàn.
- * Trả về chuỗi XML chuẩn. Nếu gặp sự cố gRPC API, trả về sitemap XML khung mặc định an toàn.
+ * Trả về chuỗi XML chuẩn từ gRPC API mà không tự động sửa nội dung text.
  */
 export async function fetchSitemapXml(
   options: FetchSitemapOptions = {}
@@ -265,95 +263,56 @@ export async function fetchSitemapXml(
   const { sdk, request } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
-  let { targetUrl, originDomain } = resolvePublicUrl(
-    options.url,
-    request,
-    options.domain
-  );
-
-  // Nếu originDomain chưa xác định hoặc bị dính IP nội bộ/fallback, cố gắng fetch Global SEO Config từ gRPC để lấy domain thật
-  if (
-    (!originDomain ||
-      originDomain === 'https://optiflow.vn' ||
-      isLocalHost(originDomain)) &&
-    seoClient
-  ) {
+  let reqPath = options.url || '';
+  if (!reqPath && request) {
     try {
-      const globalRes = await seoClient.getGlobalConfig({});
-      if (globalRes?.success && globalRes.data?.domain) {
-        let realDomain = globalRes.data.domain.trim();
-        if (realDomain) {
-          if (
-            !realDomain.startsWith('http://') &&
-            !realDomain.startsWith('https://')
-          ) {
-            realDomain = `https://${realDomain}`;
-          }
-          realDomain = realDomain.replace(/\/+$/, '');
-          originDomain = realDomain;
-
-          // Đè lại targetUrl với domain thật nếu targetUrl đang bị dính IP nội bộ
-          if (targetUrl) {
-            try {
-              const parsed = new URL(targetUrl);
-              if (isLocalHost(parsed.host)) {
-                targetUrl = `${originDomain}${parsed.pathname}${parsed.search}`;
-              }
-            } catch {
-              targetUrl = `${originDomain}/sitemap.xml`;
-            }
-          } else {
-            targetUrl = `${originDomain}/sitemap.xml`;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(
-        '[OptiFlow SDK] GetGlobalConfig for Sitemap domain fallback failed:',
-        err
-      );
+      reqPath = new URL(request.url).pathname;
+    } catch {
+      reqPath = '';
     }
   }
 
-  let xmlContent: string | undefined;
+  // Chuẩn hóa parameter url gửi lên gRPC API GetSitemapData:
+  // Mặc định GetSitemapData url là "/" khi truy cập root sitemap (/sitemap.xml hoặc / hoặc rỗng)
+  let payloadUrl = reqPath;
+  if (
+    !payloadUrl ||
+    payloadUrl === '/' ||
+    payloadUrl === '/sitemap.xml' ||
+    payloadUrl === 'sitemap.xml'
+  ) {
+    payloadUrl = '/';
+  } else {
+    try {
+      if (
+        payloadUrl.startsWith('http://') ||
+        payloadUrl.startsWith('https://')
+      ) {
+        payloadUrl = new URL(payloadUrl).pathname;
+      }
+    } catch {
+      // keep original string
+    }
+    if (payloadUrl === '/sitemap.xml') {
+      payloadUrl = '/';
+    }
+  }
 
   if (seoClient) {
     try {
-      const res = await seoClient.getSitemapData({ url: targetUrl });
+      const res = await seoClient.getSitemapData({ url: payloadUrl });
       if (res?.success && res.xmlContent) {
-        xmlContent = res.xmlContent;
+        // Trả kết quả trực tiếp từ gRPC API mà không tự động sửa text XML
+        return res.xmlContent;
       }
     } catch (err) {
       console.warn('[OptiFlow SDK] GetSitemapData failed safely:', err);
     }
   }
 
-  const replaceDomain =
-    originDomain &&
-    originDomain !== 'https://optiflow.vn' &&
-    !isLocalHost(originDomain)
-      ? originDomain
-      : options.domain || 'https://ladosite.vn';
-
-  const cleanReplaceDomain = replaceDomain.replace(/\/+$/, '');
-
-  if (xmlContent) {
-    // Tự động làm sạch và thay thế TẤT CẢ chuỗi IP nội bộ (0.0.0.0:xxxx, 127.0.0.1:xxxx, localhost:xxxx) trong XML trả về bằng domain thật
-    xmlContent = xmlContent.replace(
-      /https?:\/\/(?:0\.0\.0\.0|127\.0\.0\.1|localhost)(?::\d+)?/g,
-      cleanReplaceDomain
-    );
-    return xmlContent;
-  }
-
   // Fallback XML sitemap an toàn khi không fetch được từ API
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${cleanReplaceDomain}</loc>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
 </urlset>`;
 }
 
@@ -388,7 +347,7 @@ export interface FetchRobotsOptions {
    */
   global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
   /**
-   * Tùy chọn truyền Domain chính thức để override (ví dụ: "https://ladosite.vn").
+   * Tùy chọn truyền Domain chính thức để override.
    */
   domain?: string;
   /**
@@ -412,7 +371,7 @@ export async function fetchRobotsTxt(
   const { sdk, request } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
-  const { originDomain } = resolvePublicUrl(
+  let { originDomain } = resolvePublicUrl(
     undefined,
     request,
     options.domain || globalData?.domain
@@ -423,6 +382,9 @@ export async function fetchRobotsTxt(
       const res = await seoClient.getGlobalConfig({});
       if (res?.success && res.data) {
         globalData = res.data;
+        if (!originDomain && res.data.domain) {
+          originDomain = cleanDomainUrl(res.data.domain);
+        }
       }
     } catch (err) {
       console.warn(
@@ -435,10 +397,10 @@ export async function fetchRobotsTxt(
   let content = globalData?.robotsTxtContent;
 
   if (!content) {
-    const domain = globalData?.domain || originDomain;
-    const cleanDomain = domain.replace(/\/+$/, '');
-    content = `User-agent: *\nAllow: /\n\nSitemap: ${cleanDomain}/sitemap.xml\n`;
-  } else if (originDomain && originDomain !== 'https://optiflow.vn') {
+    const domain = cleanDomainUrl(globalData?.domain || originDomain);
+    const sitemapLine = domain ? `\nSitemap: ${domain}/sitemap.xml\n` : '';
+    content = `User-agent: *\nAllow: /${sitemapLine}`;
+  } else if (originDomain && !isLocalHost(originDomain)) {
     content = content.replace(
       /https?:\/\/(?:0\.0\.0\.0|127\.0\.0\.1|localhost)(?::\d+)?/g,
       originDomain
@@ -464,5 +426,6 @@ export async function handleRobotsTxtRequest(
     },
   });
 }
+
 
 
