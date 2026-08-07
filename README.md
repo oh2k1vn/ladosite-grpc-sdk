@@ -1,16 +1,19 @@
 # @ladosite/grpc-sdk
 
-Thư viện gRPC SDK chứa các gRPC Client được tự động biên dịch từ định nghĩa Protobuf (`.proto`), giúp các dự án (Next.js, Node.js...) kết nối và sử dụng các dịch vụ của OptiFlow đồng bộ và an toàn.
+[![Version](https://img.shields.io/badge/version-0.0.10-blue.svg)](https://github.com/oh2k1vn/ladosite-grpc-sdk)
+[![gRPC Web](https://img.shields.io/badge/gRPC--Web-Protobuf--ts-green.svg)](https://github.com/timostamm/protobuf-ts)
+
+Thư viện gRPC SDK chứa các gRPC Client được tự động biên dịch từ định nghĩa Protobuf (`.proto`), giúp các dự án (Next.js, Node.js...) kết nối và sử dụng hệ thống dịch vụ OptiFlow đồng bộ, bảo mật và an toàn.
 
 ---
 
 ## ⚡ 1. Cài đặt
 
-Thêm trực tiếp vào `dependencies` trong `package.json` của dự án:
+Khai báo trực tiếp vào `dependencies` trong `package.json` của dự án:
 
 ```json
 "dependencies": {
-  "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#v1.0.0"
+  "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#v0.0.10"
 }
 ```
 
@@ -21,10 +24,10 @@ npm install
 
 ---
 
-## ⚙️ 2. Khởi tạo & Xác thực
+## ⚙️ 2. Khởi tạo & Xác thực (Authentication)
 
-### A. Khởi tạo Client
-Ví dụ khởi tạo tại `src/lib/grpc.ts` trong dự án Next.js:
+### A. Khởi tạo Client Instance
+Khởi tạo instance tập trung tại `src/lib/grpc.ts` trong dự án Next.js:
 
 ```typescript
 import 'server-only';
@@ -37,8 +40,8 @@ export const grpcSDK = new OptiFlowGrpcSDK({
 });
 ```
 
-### B. Quản lý Token & Session
-SDK tự động đính kèm token vào header `Authorization: Bearer <token>`:
+### B. Quản lý Token & Session Tự Động
+SDK tự động đính kèm token vào HTTP/2 & gRPC Metadata header `Authorization: Bearer <token>`:
 
 ```typescript
 import { OptiFlowGrpcSDK } from '@ladosite/grpc-sdk';
@@ -49,20 +52,38 @@ export const grpcSDK = new OptiFlowGrpcSDK({
   orgId: process.env.OPTIFLOW_ORG_ID,
   
   // Hàm Dynamic Getter lấy token theo từng request (Next.js Server Component)
-  token: () => {
-    const cookieStore = cookies();
+  token: async () => {
+    const cookieStore = await cookies();
     return cookieStore.get('auth_token')?.value;
   }
 });
 
-// Hoặc thiết lập / xóa token động trên client-side instance:
+// Hoặc thiết lập / xóa token động trên Client-Side instance:
 // grpcSDK.setToken('new_access_token_value');
 // grpcSDK.clearToken();
 ```
 
 ---
 
-## 🌐 3. Tự động hóa SEO cho Next.js (Zero-Crash)
+## 📦 3. Các gRPC Services Có Sẵn
+
+SDK bọc sẵn các Service Clients qua `sdk.<service>`:
+
+| Service Property | Dịch vụ gRPC | Mô tả |
+| :--- | :--- | :--- |
+| `sdk.seo` | `SeoService` | Lấy SEO Metadata Global, Page SEO, XML Sitemap |
+| `sdk.auth` | `AuthService` | Đăng nhập, đăng ký, xác thực token |
+| `sdk.blog` | `BlogService` | Quản lý bài viết, danh mục blog |
+| `sdk.product` | `ProductService` | Quản lý sản phẩm, danh mục hàng hóa |
+| `sdk.order` | `OrderService` | Đặt hàng, theo dõi đơn hàng |
+| `sdk.comment` | `CommentService` | Bình luận, đánh giá |
+| `sdk.pageView` | `PageViewService` | Ghi nhận lượt xem trang |
+| `sdk.tracking` | `TrackingService` | Theo dõi sự kiện người dùng (Analytics) |
+| `sdk.userSubmit` | `UserSubmitService` | Xử lý form liên hệ, thu thập lead |
+
+---
+
+## 🌐 4. Tự động hóa SEO cho Next.js (Zero-Crash)
 
 SDK tích hợp sẵn các helper SEO và React Component giúp tự động fetch API gRPC (`GetGlobalConfig`, `GetMetaByUrl`), sinh ra Next.js `Metadata` chuẩn và tự động chèn các thẻ Tracking Scripts/Schema Markup JSON-LD.
 
@@ -150,15 +171,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
 ---
 
+## 📋 5. Tài liệu Bổ sung cho Backend
 
+Để xem chi tiết danh sách các trường gRPC Protobuf cần bổ sung cho module SEO (hreflang, Twitter cards, Sitemap priority...), vui lòng tham khảo file:
+- **[BACKEND_SEO_REQUIREMENTS.md](BACKEND_SEO_REQUIREMENTS.md)**
 
-## 🧪 4. Công cụ Thử nghiệm (Playground Sandbox)
+---
 
-SDK tích hợp sẵn công cụ CLI để kiểm thử gRPC API cục bộ trên Node.js mà không cần dựng proxy server:
+## 🧪 6. Công cụ Thử nghiệm (Playground Sandbox)
 
-1. **Khởi chạy CLI**:
+SDK tích hợp sẵn công cụ CLI và Server Web để kiểm thử gRPC API cục bộ trên Node.js mà không cần dựng proxy server:
+
+1. **Khởi chạy CLI Interactive Playground**:
    ```bash
    npm run playground
    ```
-2. **Cấu hình Payload**:
+2. **Khởi chạy Web Playground Server**:
+   ```bash
+   npm run playground:web
+   ```
+3. **Cấu hình Payload**:
    Các tham số mẫu của từng API được lưu tại `playground/payloads/*.json`. Bạn có thể chỉnh sửa trực tiếp các file JSON này và CLI sẽ áp dụng ngay lập tức mà không cần khởi động lại.
