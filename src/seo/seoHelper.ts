@@ -1,192 +1,206 @@
-import type { Metadata } from "next";
-import type { OptiFlowGrpcSDK } from "../client";
-import type { WrappedSeoServiceClient } from "../generated/wrapped-clients";
-import { generateMetadata } from "./generateMetadata";
+import type { Metadata } from 'next';
+import type { OptiFlowGrpcSDK } from '../client';
 import type {
-    SeoPageConfigResponse,
-    SeoGlobalConfigResponse,
-    SeoPageConfigData,
-    SeoGlobalConfigData
-} from "../generated/Protos/seo";
+  SeoGlobalConfigData,
+  SeoGlobalConfigResponse,
+  SeoPageConfigData,
+  SeoPageConfigResponse,
+} from '../generated/Protos/seo';
+import type { WrappedSeoServiceClient } from '../generated/wrapped-clients';
+import { generateMetadata } from './generateMetadata';
 
 export interface FetchSeoOptions {
-    /**
-     * Instance của OptiFlowGrpcSDK.
-     */
-    sdk?: OptiFlowGrpcSDK;
-    /**
-     * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
-     */
-    seoClient?: WrappedSeoServiceClient;
-    /**
-     * Đường dẫn URL của trang hiện tại (dùng để tự động fetch Page SEO).
-     * Ví dụ: "/products/laptop-lenovo" hoặc "https://ladosite.vn/products/laptop-lenovo".
-     */
-    url?: string;
-    /**
-     * Dữ liệu Global SEO đã fetch sẵn (nếu có).
-     */
-    global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
-    /**
-     * Dữ liệu Page SEO đã fetch sẵn (nếu có).
-     */
-    page?: SeoPageConfigResponse | SeoPageConfigData;
-    /**
-     * Tiêu đề dự phòng khi API SEO lỗi hoặc chưa có dữ liệu.
-     */
-    fallbackTitle?: string;
+  /**
+   * Instance của OptiFlowGrpcSDK.
+   */
+  sdk?: OptiFlowGrpcSDK;
+  /**
+   * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
+   */
+  seoClient?: WrappedSeoServiceClient;
+  /**
+   * Đường dẫn URL của trang hiện tại (dùng để tự động fetch Page SEO).
+   * Ví dụ: "/products/laptop-lenovo" hoặc "https://ladosite.vn/products/laptop-lenovo".
+   */
+  url?: string;
+  /**
+   * Dữ liệu Global SEO đã fetch sẵn (nếu có).
+   */
+  global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
+  /**
+   * Dữ liệu Page SEO đã fetch sẵn (nếu có).
+   */
+  page?: SeoPageConfigResponse | SeoPageConfigData;
+  /**
+   * Tiêu đề dự phòng khi API SEO lỗi hoặc chưa có dữ liệu.
+   */
+  fallbackTitle?: string;
 }
 
 export interface FetchSeoDataResult {
-    global?: SeoGlobalConfigData;
-    page?: SeoPageConfigData;
-    metadata: Metadata;
+  global?: SeoGlobalConfigData;
+  page?: SeoPageConfigData;
+  metadata: Metadata;
 }
 
 /**
  * Hàm helper tự động fetch SEO từ gRPC API và trả về Next.js Metadata chuẩn.
  * Tự động bọc try-catch an toàn (Zero Crash) - Không làm sập ứng dụng khi gRPC API gặp sự cố.
  */
-export async function fetchSeoMetadata(options: FetchSeoOptions = {}): Promise<Metadata> {
-    const result = await fetchSeoData(options);
-    return result.metadata;
+export async function fetchSeoMetadata(
+  options: FetchSeoOptions = {}
+): Promise<Metadata> {
+  const result = await fetchSeoData(options);
+  return result.metadata;
 }
 
 /**
  * Tự động hóa fetch đầy đủ dữ liệu SEO (Global + Page + Metadata) từ gRPC SDK.
  * Bọc try-catch tuyệt đối an toàn, chạy bất đồng bộ song song (Promise.allSettled) để tối ưu tốc độ.
  */
-export async function fetchSeoData(options: FetchSeoOptions = {}): Promise<FetchSeoDataResult> {
-    let globalData: SeoGlobalConfigData | undefined =
-        (options.global && 'data' in options.global && options.global.data)
-            ? options.global.data
-            : (options.global as SeoGlobalConfigData | undefined);
+export async function fetchSeoData(
+  options: FetchSeoOptions = {}
+): Promise<FetchSeoDataResult> {
+  let globalData: SeoGlobalConfigData | undefined =
+    options.global && 'data' in options.global && options.global.data
+      ? options.global.data
+      : (options.global as SeoGlobalConfigData | undefined);
 
-    let pageData: SeoPageConfigData | undefined =
-        (options.page && 'data' in options.page && options.page.data)
-            ? options.page.data
-            : (options.page as SeoPageConfigData | undefined);
+  let pageData: SeoPageConfigData | undefined =
+    options.page && 'data' in options.page && options.page.data
+      ? options.page.data
+      : (options.page as SeoPageConfigData | undefined);
 
-    const { sdk, url, fallbackTitle } = options;
-    const seoClient = options.seoClient || sdk?.seo;
+  const { sdk, url, fallbackTitle } = options;
+  const seoClient = options.seoClient || sdk?.seo;
 
-    if (seoClient) {
-        const promises: Promise<void>[] = [];
+  if (seoClient) {
+    const promises: Promise<void>[] = [];
 
-        // 1. Tự động fetch Global SEO song song nếu chưa có
-        if (!globalData) {
-            promises.push(
-                seoClient.getGlobalConfig({})
-                    .then(res => {
-                        if (res?.success && res.data) {
-                            globalData = res.data;
-                        }
-                    })
-                    .catch(err => {
-                        console.warn("[OptiFlow SDK] GetGlobalConfig SEO failed safely:", err);
-                    })
+    // 1. Tự động fetch Global SEO song song nếu chưa có
+    if (!globalData) {
+      promises.push(
+        seoClient
+          .getGlobalConfig({})
+          .then((res) => {
+            if (res?.success && res.data) {
+              globalData = res.data;
+            }
+          })
+          .catch((err) => {
+            console.warn(
+              '[OptiFlow SDK] GetGlobalConfig SEO failed safely:',
+              err
             );
-        }
-
-        // 2. Tự động fetch Page SEO song song bằng URL nếu chưa có
-        if (url && !pageData) {
-            promises.push(
-                seoClient.getMetaByUrl({ url })
-                    .then(res => {
-                        if (res?.success && res.data) {
-                            pageData = res.data;
-                        }
-                    })
-                    .catch(err => {
-                        console.warn(`[OptiFlow SDK] GetMetaByUrl SEO failed safely for URL (${url}):`, err);
-                    })
-            );
-        }
-
-        // Thực thi tất cả request API SEO song song để tối ưu latency
-        if (promises.length > 0) {
-            await Promise.allSettled(promises);
-        }
+          })
+      );
     }
 
-    // 3. Tạo Next.js Metadata chuẩn
-    let metadata = generateMetadata({
-        global: globalData,
-        page: pageData,
-    });
-
-    // Fallback title nếu không có dữ liệu SEO nào và có fallbackTitle truyền vào
-    if ((!metadata || Object.keys(metadata).length === 0) && fallbackTitle) {
-        metadata = {
-            title: fallbackTitle,
-        };
+    // 2. Tự động fetch Page SEO song song bằng URL nếu chưa có
+    if (url && !pageData) {
+      promises.push(
+        seoClient
+          .getMetaByUrl({ url })
+          .then((res) => {
+            if (res?.success && res.data) {
+              pageData = res.data;
+            }
+          })
+          .catch((err) => {
+            console.warn(
+              `[OptiFlow SDK] GetMetaByUrl SEO failed safely for URL (${url}):`,
+              err
+            );
+          })
+      );
     }
 
-    return {
-        global: globalData,
-        page: pageData,
-        metadata,
+    // Thực thi tất cả request API SEO song song để tối ưu latency
+    if (promises.length > 0) {
+      await Promise.allSettled(promises);
+    }
+  }
+
+  // 3. Tạo Next.js Metadata chuẩn
+  let metadata = generateMetadata({
+    global: globalData,
+    page: pageData,
+  });
+
+  // Fallback title nếu không có dữ liệu SEO nào và có fallbackTitle truyền vào
+  if ((!metadata || Object.keys(metadata).length === 0) && fallbackTitle) {
+    metadata = {
+      title: fallbackTitle,
     };
+  }
+
+  return {
+    global: globalData,
+    page: pageData,
+    metadata,
+  };
 }
 
 export interface FetchSitemapOptions {
-    /**
-     * Instance của OptiFlowGrpcSDK.
-     */
-    sdk?: OptiFlowGrpcSDK;
-    /**
-     * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
-     */
-    seoClient?: WrappedSeoServiceClient;
-    /**
-     * URL request hoặc Base URL truyền vào API gRPC GetSitemapData.
-     * Ví dụ: "https://ladosite.vn" hoặc URL request hiện tại.
-     */
-    url?: string;
-    /**
-     * Request object trong Route Handler của Next.js (nếu có).
-     */
-    request?: Request;
+  /**
+   * Instance của OptiFlowGrpcSDK.
+   */
+  sdk?: OptiFlowGrpcSDK;
+  /**
+   * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
+   */
+  seoClient?: WrappedSeoServiceClient;
+  /**
+   * URL request hoặc Base URL truyền vào API gRPC GetSitemapData.
+   * Ví dụ: "https://ladosite.vn" hoặc URL request hiện tại.
+   */
+  url?: string;
+  /**
+   * Request object trong Route Handler của Next.js (nếu có).
+   */
+  request?: Request;
 }
 
 /**
  * Tự động fetch XML sitemap từ gRPC API (GetSitemapData) với cơ chế bọc try-catch tuyệt đối an toàn.
  * Trả về chuỗi XML chuẩn. Nếu gặp sự cố gRPC API, trả về sitemap XML khung mặc định an toàn.
  */
-export async function fetchSitemapXml(options: FetchSitemapOptions = {}): Promise<string> {
-    const { sdk, request } = options;
-    const seoClient = options.seoClient || sdk?.seo;
+export async function fetchSitemapXml(
+  options: FetchSitemapOptions = {}
+): Promise<string> {
+  const { sdk, request } = options;
+  const seoClient = options.seoClient || sdk?.seo;
 
-    let targetUrl = options.url || "";
-    if (!targetUrl && request) {
-        try {
-            targetUrl = request.url;
-        } catch {
-            targetUrl = "";
-        }
+  let targetUrl = options.url || '';
+  if (!targetUrl && request) {
+    try {
+      targetUrl = request.url;
+    } catch {
+      targetUrl = '';
     }
+  }
 
-    if (seoClient) {
-        try {
-            const res = await seoClient.getSitemapData({ url: targetUrl });
-            if (res?.success && res.xmlContent) {
-                return res.xmlContent;
-            }
-        } catch (err) {
-            console.warn("[OptiFlow SDK] GetSitemapData failed safely:", err);
-        }
+  if (seoClient) {
+    try {
+      const res = await seoClient.getSitemapData({ url: targetUrl });
+      if (res?.success && res.xmlContent) {
+        return res.xmlContent;
+      }
+    } catch (err) {
+      console.warn('[OptiFlow SDK] GetSitemapData failed safely:', err);
     }
+  }
 
-    // Fallback XML sitemap an toàn khi không fetch được từ API
-    let domain = "https://optiflow.vn";
-    if (targetUrl) {
-        try {
-            domain = new URL(targetUrl).origin;
-        } catch {
-            domain = targetUrl;
-        }
+  // Fallback XML sitemap an toàn khi không fetch được từ API
+  let domain = 'https://optiflow.vn';
+  if (targetUrl) {
+    try {
+      domain = new URL(targetUrl).origin;
+    } catch {
+      domain = targetUrl;
     }
-    return `<?xml version="1.0" encoding="UTF-8"?>
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>${domain}</loc>
@@ -200,13 +214,15 @@ export async function fetchSitemapXml(options: FetchSitemapOptions = {}): Promis
  * Helper tạo Web Standard Response (chuẩn XML) cho Next.js Route Handler (`app/sitemap.xml/route.ts`).
  * Trả về Response với Content-Type: application/xml và Cache-Control tối ưu.
  */
-export async function handleSitemapRequest(options: FetchSitemapOptions = {}): Promise<Response> {
-    const xmlContent = await fetchSitemapXml(options);
-    return new Response(xmlContent, {
-        headers: {
-            "Content-Type": "application/xml; charset=utf-8",
-            "Cache-Control": "public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400",
-        },
-    });
+export async function handleSitemapRequest(
+  options: FetchSitemapOptions = {}
+): Promise<Response> {
+  const xmlContent = await fetchSitemapXml(options);
+  return new Response(xmlContent, {
+    headers: {
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control':
+        'public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400',
+    },
+  });
 }
-

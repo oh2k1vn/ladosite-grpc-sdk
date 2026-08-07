@@ -1,9 +1,5 @@
 {
   "pageNumber": 1,
   "pageSize": 10,
-  "criteria": [],
-  "sort": {
-    "field": "createdAt",
-    "order": "desc"
-  }
+  "criteria": []
 }

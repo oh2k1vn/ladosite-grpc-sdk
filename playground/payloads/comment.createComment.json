@@ -1,5 +1,7 @@
 {
-  "refId": "sample-ref-id",
-  "refType": "blog",
-  "content": "This is a sample comment."
+  "refId": "prod-123",
+  "refType": "product",
+  "content": "Sản phẩm dùng rất tốt!",
+  "authorName": "Khách hàng thử nghiệm",
+  "authorEmail": "test@example.com"
 }

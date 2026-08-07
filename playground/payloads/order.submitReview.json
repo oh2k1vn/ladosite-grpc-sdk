@@ -1,5 +1,5 @@
 {
-  "orderId": "sample-order-id",
+  "orderId": "ORD-123456",
   "rating": 5,
-  "comment": "Great packaging and fast shipping!"
+  "comment": "Đóng gói đẹp, giao hàng nhanh"
 }

@@ -1,182 +1,236 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as readline from 'readline';
-import { OptiFlowGrpcSDK } from '../src';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as readline from 'node:readline';
+import { OptiFlowGrpcSDK } from '../src/index';
 
-// Simple .env parser to avoid external dependencies
+// Load .env variables manually if not already present in process.env
 function loadEnv() {
   const envPath = path.resolve(process.cwd(), '.env');
   if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, 'utf-8');
-    content.split('\n').forEach((line) => {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return;
-      const index = trimmed.indexOf('=');
-      if (index > 0) {
-        const key = trimmed.substring(0, index).trim();
-        let val = trimmed.substring(index + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.substring(1, val.length - 1);
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        let value = trimmed.slice(eqIdx + 1).trim();
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
         }
         if (!process.env[key]) {
-          process.env[key] = val;
+          process.env[key] = value;
         }
       }
-    });
+    }
   }
 }
 
 loadEnv();
 
 const baseUrl = process.env.OPTIFLOW_GRPC_URL || 'https://grpc.optiflow.vn';
-let orgId = process.env.OPTIFLOW_ORG_ID || '8581da5384b349e68575dfb8';
+const orgId = process.env.OPTIFLOW_ORG_ID || '8581da5384b349e68575dfb8';
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
+console.log('--------------------------------------------------');
+console.log('🚀 OptiFlow gRPC SDK Playground CLI');
+console.log(`🌐 Base URL: ${baseUrl}`);
+console.log(`🏢 Org ID:   ${orgId}`);
+console.log('--------------------------------------------------\n');
+
+const sdk = new OptiFlowGrpcSDK({
+  baseUrl,
+  orgId,
+  debug: true,
 });
 
-const payloadsDir = path.resolve(process.cwd(), 'playground', 'payloads');
+// Map services to their available methods
+const SERVICES: Record<string, string[]> = {
+  seoHelper: [
+    'fetchSeoMetadata',
+    'fetchSeoData',
+    'fetchSitemapXml',
+    'generateMetadata',
+  ],
+  auth: ['login'],
+  blog: [
+    'getBlogsByQuery',
+    'getBlogDetail',
+    'getBlogsByBlogGroupSlug',
+    'getBlogGroupsByQuery',
+    'getBlogGroupsBySlug',
+    'getByQuery',
+    'getBySlug',
+  ],
+  comment: ['createComment', 'getCommentsByRef'],
+  order: [
+    'placeOrder',
+    'getMyOrders',
+    'getOrderDetail',
+    'cancelOrder',
+    'getOrderTracking',
+    'requestRefund',
+    'submitReview',
+  ],
+  pageView: ['getPageView'],
+  product: [
+    'getProductsByQuery',
+    'getProductDetail',
+    'getProductsByProductGroupSlug',
+    'getProductGroupsBySlug',
+    'getProductGroupsByQuery',
+    'getByQuery',
+    'getBySlug',
+  ],
+  seo: ['getGlobalConfig', 'getMetaByUrl', 'getSitemapData'],
+  tracking: ['ingestEvent'],
+  userSubmit: ['submit'],
+};
 
-// Scan folder for JSON files
-const methods = fs.readdirSync(payloadsDir)
-  .filter(file => file.endsWith('.json'))
-  .map(file => file.slice(0, -5)) // remove '.json' extension
-  .sort(); // keep it sorted alphabetically
-
-function question(query: string): Promise<string> {
-  return new Promise((resolve) => rl.question(query, resolve));
+function getPayload(
+  serviceName: string,
+  methodName: string
+): Record<string, unknown> {
+  const payloadPath = path.resolve(
+    process.cwd(),
+    `playground/payloads/${serviceName}.${methodName}.json`
+  );
+  if (fs.existsSync(payloadPath)) {
+    try {
+      const content = fs.readFileSync(payloadPath, 'utf-8');
+      return JSON.parse(content);
+    } catch (_err) {
+      console.warn(
+        `⚠️ Failed to parse payload file at ${payloadPath}. Using empty object.`
+      );
+      return {};
+    }
+  }
+  return {};
 }
 
-async function handleCall(method: string) {
-  if (!orgId) {
-    console.log('\n❌ Error: OPTIFLOW_ORG_ID is not set in environment or .env file!');
+async function executeMethod(
+  serviceName: string,
+  methodName: string,
+  customPayload?: Record<string, unknown>
+) {
+  const sdkServices = sdk as unknown as Record<
+    string,
+    Record<string, (p: unknown) => Promise<unknown>>
+  >;
+  const serviceObj = sdkServices[serviceName];
+  if (!serviceObj) {
+    console.error(`❌ Service '${serviceName}' not found on SDK instance.`);
     return;
   }
 
-  console.log(`\nSelected Method: \x1b[36m${method}\x1b[0m`);
-  
-  const filePath = path.join(payloadsDir, `${method}.json`);
-  let payload: any = {};
-  try {
-    const rawContent = fs.readFileSync(filePath, 'utf8');
-    payload = JSON.parse(rawContent);
-  } catch (err: any) {
-    console.log(`\n⚠️  Could not read payload file (${method}.json): ${err.message}`);
-    console.log('Running with empty payload {}');
-  }
-
-  console.log('Current Payload:');
-  console.log(JSON.stringify(payload, null, 2));
-
-  console.log(`\n👉 Tip: You can edit 'playground/payloads/${method}.json' directly in your editor.`);
-  const answer = await question('Press Enter to run this payload, or type any one-off JSON override: ');
-
-  if (answer.trim()) {
-    try {
-      payload = JSON.parse(answer);
-    } catch (e: any) {
-      console.log(`\n❌ Invalid JSON input: ${e.message}. Using default instead.`);
-    }
-  }
-
-  console.log('\n⏳ Connecting and making gRPC call...');
-  const sdk = new OptiFlowGrpcSDK({
-    baseUrl,
-    orgId,
-    debug: false // Turn off console groups to keep output neat
-  });
-
-  const parts = method.split('.');
-  let target: any = sdk;
-  for (const part of parts) {
-    if (target && target[part]) {
-      target = target[part];
-    } else {
-      target = null;
-      break;
-    }
-  }
-
-  if (typeof target !== 'function') {
-    console.log(`\n❌ Error: Method ${method} is not a valid SDK function.`);
+  if (typeof serviceObj[methodName] !== 'function') {
+    console.error(
+      `❌ Method '${methodName}' not found on service '${serviceName}'.`
+    );
     return;
   }
+
+  const payload = customPayload ?? getPayload(serviceName, methodName);
+
+  console.log(`\n🔹 [CALLING API] ${serviceName}.${methodName}()`);
+  console.log(
+    `📄 Payload File: playground/payloads/${serviceName}.${methodName}.json`
+  );
+  console.log('📦 Sent Request Payload:');
+  console.dir(payload, { depth: null, colors: true });
+  console.log('\n⏳ Requesting server...\n');
 
   const startTime = Date.now();
+
   try {
-    const result = await target.call(sdk, payload);
+    const result = await serviceObj[methodName](payload);
     const duration = Date.now() - startTime;
-    console.log(`\n\x1b[32m✅ SUCCESS (${duration}ms)\x1b[0m`);
-    console.log(JSON.stringify(result, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2));
-  } catch (error: any) {
+    console.log(`\n✅ [RESPONSE SUCCESS] (${duration}ms)`);
+    console.log('📥 Response Data:');
+    console.dir(result, { depth: null, colors: true });
+  } catch (error: unknown) {
     const duration = Date.now() - startTime;
-    console.log(`\n\x1b[31m❌ ERROR (${duration}ms)\x1b[0m`);
-    console.log(JSON.stringify({
-      message: error.message || 'Unknown error occurred.',
-      code: error.code || 'UNKNOWN',
-      meta: error.meta || null
-    }, null, 2));
-  }
-}
-
-async function menu() {
-  console.log('\n=======================================');
-  console.log('      OptiFlow gRPC SDK CLI Tester');
-  console.log('=======================================');
-  console.log(`Endpoint: \x1b[33m${baseUrl}\x1b[0m`);
-  console.log(`Org ID:   \x1b[33m${orgId || '(Not set. Please edit .env)'}\x1b[0m`);
-  console.log('---------------------------------------');
-
-  methods.forEach((m, idx) => {
-    console.log(`${idx + 1}. ${m}`);
-  });
-  console.log('0. Exit');
-  console.log('=======================================');
-
-  const answer = await question(`Select option (0-${methods.length}): `);
-  const num = parseInt(answer.trim());
-
-  if (isNaN(num) || num < 0 || num > methods.length) {
-    console.log('\n❌ Invalid option. Please select again.');
-    await menu();
-    return;
-  }
-
-  if (num === 0) {
-    rl.close();
-    console.log('\nGoodbye!');
-    process.exit(0);
-  }
-
-  const selectedMethod = methods[num - 1];
-  await handleCall(selectedMethod);
-
-  await question('\nPress Enter to return to menu...');
-  await menu();
-}
-
-async function main() {
-  if (!orgId) {
-    console.log('\n⚠️  WARNING: OPTIFLOW_ORG_ID is not configured in .env file.');
-    const inputOrgId = await question('Please enter your Organization ID (x-org): ');
-
-    if (inputOrgId.trim()) {
-      orgId = inputOrgId.trim();
-      try {
-        fs.appendFileSync(path.resolve(process.cwd(), '.env'), `\nOPTIFLOW_ORG_ID="${orgId}"\nOPTIFLOW_GRPC_URL="${baseUrl}"\n`);
-        console.log('✅ Configuration saved to .env file for future test runs.');
-      } catch (err: any) {
-        console.log(`⚠️  Could not write to .env file: ${err.message}`);
+    console.log(`\n❌ [RESPONSE ERROR] (${duration}ms)`);
+    const err = error as Record<string, unknown>;
+    if (err?.code !== undefined) {
+      console.error(`Error Code: ${err.code}`);
+      console.error(`Error Message: ${err.message}`);
+      if (err.meta) {
+        console.error('Error Metadata:', err.meta);
       }
     } else {
-      console.log('❌ Error: Organization ID is required to run tests. Exiting...');
-      rl.close();
-      process.exit(1);
+      console.error(error);
     }
   }
-
-  await menu();
+  console.log('\n--------------------------------------------------\n');
 }
 
-main();
+async function startInteractiveCLI() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const ask = (query: string): Promise<string> =>
+    new Promise((resolve) => rl.question(query, resolve));
+
+  const serviceKeys = Object.keys(SERVICES);
+
+  while (true) {
+    console.log('📋 Select a Service to test:');
+    serviceKeys.forEach((key, idx) => {
+      console.log(`  ${idx + 1}. ${key}`);
+    });
+    console.log('  0. Exit');
+
+    const answer = await ask('\nEnter choice (0-9): ');
+    const choiceIdx = parseInt(answer.trim(), 10);
+
+    if (choiceIdx === 0 || Number.isNaN(choiceIdx)) {
+      console.log('👋 Exiting Playground.');
+      rl.close();
+      process.exit(0);
+    }
+
+    const selectedService = serviceKeys[choiceIdx - 1];
+    if (!selectedService) {
+      console.log('⚠️ Invalid selection. Try again.\n');
+      continue;
+    }
+
+    const methods = SERVICES[selectedService];
+    console.log(`\n📋 Select a Method for service '${selectedService}':`);
+    methods.forEach((m, idx) => {
+      console.log(`  ${idx + 1}. ${m}`);
+    });
+    console.log('  0. Back');
+
+    const methodAnswer = await ask(`\nEnter choice (0-${methods.length}): `);
+    const methodIdx = parseInt(methodAnswer.trim(), 10);
+
+    if (methodIdx === 0 || Number.isNaN(methodIdx)) {
+      console.log('\n');
+      continue;
+    }
+
+    const selectedMethod = methods[methodIdx - 1];
+    if (!selectedMethod) {
+      console.log('⚠️ Invalid selection.\n');
+      continue;
+    }
+
+    await executeMethod(selectedService, selectedMethod);
+  }
+}
+
+// Parse command-line args if provided: npm run playground -- <service> <method>
+const args = process.argv.slice(2);
+if (args.length >= 2) {
+  const [serviceArg, methodArg] = args;
+  executeMethod(serviceArg, methodArg).then(() => process.exit(0));
+} else {
+  startInteractiveCLI();
+}

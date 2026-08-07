@@ -1,6 +1,6 @@
+import * as crypto from 'node:crypto';
 import { GrpcWebFetchTransport } from '@protobuf-ts/grpcweb-transport';
 import { RpcError } from '@protobuf-ts/runtime-rpc';
-import * as crypto from 'crypto';
 
 // Import raw service clients
 import { AuthServiceClient } from './generated/Protos/auth.client';
@@ -26,19 +26,36 @@ import {
   WrappedUserSubmitServiceClient,
 } from './generated/wrapped-clients';
 
-const DEFAULT_PUBLIC_KEY = process.env.OPTIFLOW_PUBLIC_KEY || `-----BEGIN PUBLIC KEY-----
+const DEFAULT_PUBLIC_KEY =
+  process.env.OPTIFLOW_PUBLIC_KEY ||
+  `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnYmTJKkxl/Yg3gA6SQ91foY5CB50LDXcYrq6Ukx8obTuSuH0RAcg/oSem+gT5G1aakdQqtCkYXSHS9wS8kLK3O4AXFCONED4I8tJ8GKRcxFvytxHTIMmqqa+gw+pbPpmV4Zr+KjLHZsLse0jFIJ+gZ2hR3CrAeJ8Au+3uKySNNZ0F2laJAPso9p/80d4nKhf6N/t3/AU2LirnvWyADQeoaXVRQAv3LVpe6IG+bgijg6Cu4rA1kOUxFSj7nD6n1+QZqS7Fu2WdwFd7DbAr1RQKzpxqwF2p7LTifDUUGLrGF45oslxytwbHyEc36eRx1g9mQIdipkIa1KXdjf51sE2jwIDAQAB
 -----END PUBLIC KEY-----`;
 
-const DEFAULT_USER_NAME = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_NAME) || 'local_dev@optiflow.vn';
-const DEFAULT_USER_ID = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_ID) || 'DEV-LOCAL-001';
-const DEFAULT_DISPLAY_NAME = (typeof process !== 'undefined' && process.env.OPTIFLOW_DISPLAY_NAME) || 'Local Developer';
-const DEFAULT_USER_AGENT = (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_AGENT) || 'QA-Bot';
+const DEFAULT_USER_NAME =
+  (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_NAME) ||
+  'local_dev@optiflow.vn';
+const DEFAULT_USER_ID =
+  (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_ID) ||
+  'DEV-LOCAL-001';
+const DEFAULT_DISPLAY_NAME =
+  (typeof process !== 'undefined' && process.env.OPTIFLOW_DISPLAY_NAME) ||
+  'Local Developer';
+const DEFAULT_USER_AGENT =
+  (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_AGENT) ||
+  'QA-Bot';
 
 let cachedChecksum: string | null = null;
 
-function generateChecksum(publicKey: string = DEFAULT_PUBLIC_KEY, values: string = 'web:optiflow_svc'): string {
-  if (cachedChecksum && publicKey === DEFAULT_PUBLIC_KEY && values === 'web:optiflow_svc') {
+function generateChecksum(
+  publicKey: string = DEFAULT_PUBLIC_KEY,
+  values: string = 'web:optiflow_svc'
+): string {
+  if (
+    cachedChecksum &&
+    publicKey === DEFAULT_PUBLIC_KEY &&
+    values === 'web:optiflow_svc'
+  ) {
     return cachedChecksum;
   }
   try {
@@ -78,7 +95,7 @@ export interface GrpcSDKConfig {
 }
 
 // Legacy type alias for backward-compatibility
-export type WrappedClient<T, M = {}> = T;
+export type WrappedClient<T, _M = Record<string, unknown>> = T;
 
 export class OptiFlowGrpcSDK {
   private readonly transport: GrpcWebFetchTransport;
@@ -126,13 +143,13 @@ export class OptiFlowGrpcSDK {
             };
 
             // Dynamically resolve and attach authorization token if not already present
-            if (!options.meta['authorization'] && !options.meta['Authorization']) {
+            if (!options.meta.authorization && !options.meta.Authorization) {
               let activeToken = self.token;
               if (self.tokenGetter) {
                 activeToken = self.tokenGetter() || null;
               }
               if (activeToken) {
-                options.meta['authorization'] = `Bearer ${activeToken}`;
+                options.meta.authorization = `Bearer ${activeToken}`;
               }
             }
 
@@ -148,7 +165,10 @@ export class OptiFlowGrpcSDK {
                 console.log('Headers/Metadata:', options.meta);
                 console.groupEnd();
               } else {
-                console.log(`[gRPC REQ] ${method.service.typeName}/${method.name}`, input);
+                console.log(
+                  `[gRPC REQ] ${method.service.typeName}/${method.name}`,
+                  input
+                );
               }
             }
 
@@ -165,7 +185,10 @@ export class OptiFlowGrpcSDK {
                     console.log('Response:', res);
                     console.groupEnd();
                   } else {
-                    console.log(`[gRPC RES] ${method.service.typeName}/${method.name}`, res);
+                    console.log(
+                      `[gRPC RES] ${method.service.typeName}/${method.name}`,
+                      res
+                    );
                   }
                 }
               },
@@ -177,7 +200,9 @@ export class OptiFlowGrpcSDK {
                       err.code === 'UNAVAILABLE' ||
                       (err.meta &&
                         Object.values(err.meta).some(
-                          (val) => typeof val === 'string' && val.toLowerCase().includes('halted')
+                          (val) =>
+                            typeof val === 'string' &&
+                            val.toLowerCase().includes('halted')
                         )));
 
                   if (isBrowser) {
@@ -204,14 +229,20 @@ export class OptiFlowGrpcSDK {
                           err.meta
                         );
                       } else {
-                        console.error(`[gRPC ERR] ${method.service.typeName}/${method.name}`, {
-                          code: err.code,
-                          message: err.message,
-                          meta: err.meta,
-                        });
+                        console.error(
+                          `[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                          {
+                            code: err.code,
+                            message: err.message,
+                            meta: err.meta,
+                          }
+                        );
                       }
                     } else {
-                      console.error(`[gRPC ERR] ${method.service.typeName}/${method.name}`, err);
+                      console.error(
+                        `[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                        err
+                      );
                     }
                   }
                 }
@@ -230,15 +261,33 @@ export class OptiFlowGrpcSDK {
     });
 
     // Initialize statically-generated wrapped clients
-    this.auth = new WrappedAuthServiceClient(new AuthServiceClient(this.transport));
-    this.blog = new WrappedBlogServiceClient(new BlogServiceClient(this.transport));
-    this.comment = new WrappedCommentServiceClient(new CommentServiceClient(this.transport));
-    this.order = new WrappedOrderServiceClient(new OrderServiceClient(this.transport));
-    this.pageView = new WrappedPageViewServiceClient(new PageViewServiceClient(this.transport));
-    this.product = new WrappedProductServiceClient(new ProductServiceClient(this.transport));
-    this.seo = new WrappedSeoServiceClient(new SeoServiceClient(this.transport));
-    this.tracking = new WrappedTrackingServiceClient(new TrackingServiceClient(this.transport));
-    this.userSubmit = new WrappedUserSubmitServiceClient(new UserSubmitServiceClient(this.transport));
+    this.auth = new WrappedAuthServiceClient(
+      new AuthServiceClient(this.transport)
+    );
+    this.blog = new WrappedBlogServiceClient(
+      new BlogServiceClient(this.transport)
+    );
+    this.comment = new WrappedCommentServiceClient(
+      new CommentServiceClient(this.transport)
+    );
+    this.order = new WrappedOrderServiceClient(
+      new OrderServiceClient(this.transport)
+    );
+    this.pageView = new WrappedPageViewServiceClient(
+      new PageViewServiceClient(this.transport)
+    );
+    this.product = new WrappedProductServiceClient(
+      new ProductServiceClient(this.transport)
+    );
+    this.seo = new WrappedSeoServiceClient(
+      new SeoServiceClient(this.transport)
+    );
+    this.tracking = new WrappedTrackingServiceClient(
+      new TrackingServiceClient(this.transport)
+    );
+    this.userSubmit = new WrappedUserSubmitServiceClient(
+      new UserSubmitServiceClient(this.transport)
+    );
   }
 
   /**

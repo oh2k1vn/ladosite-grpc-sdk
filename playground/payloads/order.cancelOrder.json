@@ -1,4 +1,4 @@
 {
-  "id": "sample-order-id",
-  "reason": "Customer requested cancellation."
+  "orderId": "ORD-123456",
+  "reason": "Đổi ý không mua nữa"
 }

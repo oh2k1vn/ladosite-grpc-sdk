@@ -24,7 +24,11 @@
     "build": "tsup",
     "prebuild": "npm run generate",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
     "playground": "tsx playground/test-cli.ts",
+    "playground:web": "tsx playground/server.ts",
     "prepare": "npm run build"
   },
   "keywords": [
@@ -48,6 +52,7 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.7",
     "@protobuf-ts/plugin": "^2.11.1",
     "@types/node": "^20.11.0",
     "@types/react": "^19.2.17",

@@ -1,6 +1,6 @@
 {
-  "email": "test@example.com",
-  "password": "password123",
-  "isFirebaseAuth": false,
-  "firebaseUserJson": ""
+  "email": "dev@optiflow.vn",
+  "password": "",
+  "isFirebaseAuth": true,
+  "firebaseUserJson": "{\"uid\":\"DEV-LOCAL-001\",\"email\":\"dev@optiflow.vn\",\"displayName\":\"Dev User\"}"
 }

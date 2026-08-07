@@ -1,7 +1,4 @@
 {
-  "fullName": "Nguyen Van A",
-  "phoneNumber": "0900000000",
-  "email": "a@example.com",
-  "topic": "Contact Inquiry",
-  "content": "I would like to request a demo of the OptiFlow platform."
+  "formId": "form-contact",
+  "data": "{\"name\": \"Test User\", \"phone\": \"0900000000\"}"
 }

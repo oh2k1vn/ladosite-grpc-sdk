@@ -1,5 +1,4 @@
 {
-  "orderId": "sample-order-id",
-  "amount": 300000,
-  "reason": "Defective product."
+  "orderId": "ORD-123456",
+  "reason": "Sản phẩm bị lỗi"
 }

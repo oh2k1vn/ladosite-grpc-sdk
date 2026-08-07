@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OptiFlow gRPC SDK Playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+  
+  <!-- Firebase 10 Modular ES Module Loader -->
+  <script type="module">
+    import { getApp, getApps, initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { GoogleAuthProvider, getAuth, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    window.FirebaseSDK = {
+      initializeApp,
+      getApps,
+      getApp,
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+    };
+  </script>
+
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --bg-card: #111827;
+      --bg-hover: #1f2937;
+      --border-color: #1f2937;
+      --border-light: #374151;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.25);
+      --success: #10b981;
+      --error: #ef4444;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'Fira Code', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-dark);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2d3748;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4a5568;
+    }
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: #2d3748 var(--bg-dark);
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header Navbar */
+    .header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 50px;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: #60a5fa;
+    }
+
+    .brand-logo {
+      width: 26px;
+      height: 26px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 0.85rem;
+      font-weight: bold;
+    }
+
+    .config-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .config-item {
+      display: flex;
+      align-items: center;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 3px 8px;
+    }
+
+    .config-item label {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-right: 6px;
+      text-transform: uppercase;
+    }
+
+    .config-item input {
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      outline: none;
+      width: 140px;
+    }
+
+    .btn-icon-clear {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0 4px;
+      transition: color 0.15s;
+    }
+    .btn-icon-clear:hover {
+      color: var(--error);
+    }
+
+    .btn-firebase-login {
+      background: linear-gradient(135deg, #ea4335, #c5221f);
+      color: white;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      box-shadow: 0 2px 6px rgba(234, 67, 53, 0.25);
+    }
+    .btn-firebase-login:hover {
+      background: linear-gradient(135deg, #d93025, #b31412);
+      box-shadow: 0 4px 10px rgba(234, 67, 53, 0.35);
+    }
+
+    /* App Layout */
+    .app-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 50px);
+      overflow: hidden;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      width: 240px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    .search-box {
+      padding: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text-main);
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .services-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+    }
+
+    .service-group {
+      margin-bottom: 6px;
+    }
+
+    .service-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 6px 10px 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .method-item {
+      padding: 6px 10px;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #9ca3af;
+      margin-bottom: 2px;
+      transition: all 0.12s ease;
+      border-left: 2px solid transparent;
+    }
+
+    .method-item:hover {
+      background: var(--bg-hover);
+      color: var(--text-main);
+    }
+
+    .method-item.active {
+      background: rgba(59, 130, 246, 0.12);
+      color: #60a5fa;
+      font-weight: 600;
+      border-left-color: var(--primary);
+    }
+
+    .method-badge {
+      font-size: 0.65rem;
+      background: rgba(0, 0, 0, 0.4);
+      color: var(--text-muted);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+    }
+
+    /* Workspace */
+    .workspace {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-dark);
+      overflow: hidden;
+    }
+
+    .action-bar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 48px;
+    }
+
+    .endpoint-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .method-tag {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+
+    .btn-execute {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+      box-shadow: 0 2px 8px var(--primary-glow);
+    }
+
+    .btn-execute:hover {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+
+    .btn-execute:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .kbd-shortcut {
+      font-size: 0.65rem;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+    }
+
+    /* Split Panes */
+    .panes {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border-color);
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .pane:last-child {
+      border-right: none;
+    }
+
+    .pane-header {
+      background: #111827;
+      border-bottom: 1px solid var(--border-color);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      height: 36px;
+    }
+
+    .pane-tools {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-sm:hover {
+      color: var(--text-main);
+      border-color: var(--primary);
+    }
+
+    .editor-container {
+      flex: 1;
+      position: relative;
+      background: var(--bg-dark);
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #monacoEditor, #monacoResponseViewer {
+      width: 100%;
+      height: 100%;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+
+    .status-pill.success {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-pill.error {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .latency-pill {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+    }
+
+    /* Modal Styling for Firebase Config */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 10px;
+      width: 450px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .modal-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #60a5fa;
+    }
+    .modal-field {
+      margin-bottom: 10px;
+    }
+    .modal-field label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .modal-field input {
+      width: 100%;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Navbar -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <span>OptiFlow gRPC SDK</span>
+    </div>
+
+    <div class="config-bar">
+      <button type="button" class="btn-firebase-login" id="btnFirebaseLogin">
+        <span>🔑 Login Google (Firebase)</span>
+      </button>
+      <div class="config-item">
+        <label for="baseUrlInput">Base URL</label>
+        <input type="text" id="baseUrlInput" value="https://grpc.optiflow.vn" />
+      </div>
+      <div class="config-item">
+        <label for="orgIdInput">Org ID</label>
+        <input type="text" id="orgIdInput" value="8581da5384b349e68575dfb8" />
+      </div>
+      <div class="config-item">
+        <label for="tokenInput">Token</label>
+        <input type="text" id="tokenInput" placeholder="Bearer JWT..." />
+        <button type="button" class="btn-icon-clear" id="btnClearToken" title="Clear token">✕</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- App Layout -->
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="search-box">
+        <input type="text" class="search-input" id="searchInput" placeholder="Tìm kiếm API..." />
+      </div>
+      <div class="services-list" id="servicesList"></div>
+    </aside>
+
+    <!-- Workspace -->
+    <main class="workspace">
+      <!-- Endpoint Bar -->
+      <div class="action-bar">
+        <div class="endpoint-badge">
+          <span class="method-tag" id="currentServiceTag">seo</span>
+          <span id="currentMethodName">getGlobalConfig</span>
+        </div>
+        <button type="button" class="btn-execute" id="btnExecute">
+          <span>▶ Run Request</span>
+          <span class="kbd-shortcut">Ctrl+Enter</span>
+        </button>
+      </div>
+
+      <!-- Split Panes -->
+      <div class="panes">
+        <!-- Request Editor Pane -->
+        <div class="pane">
+          <div class="pane-header">
+            <span>Payload (JSON Editor ✨)</span>
+            <div class="pane-tools">
+              <button type="button" class="btn-sm" id="btnFormatJson">Format JSON</button>
+              <button type="button" class="btn-sm" id="btnResetPayload">Reset</button>
+            </div>
+          </div>
+          <div class="editor-container">
+            <div id="monacoEditor"></div>
+          </div>
+        </div>
+
+        <!-- Response Viewer Pane -->
+        <div class="pane">
+          <div class="pane-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span>Response Data (Tree & Code Folding ✨)</span>
+              <span class="status-pill success" id="statusPill" style="display: none;">200 OK</span>
+              <span class="latency-pill" id="latencyPill"></span>
+            </div>
+            <div class="pane-tools">
+              <button type="button" class="btn-sm" id="btnCollapseAll">Thu gọn</button>
+              <button type="button" class="btn-sm" id="btnExpandAll">Mở rộng</button>
+              <button type="button" class="btn-sm" id="btnCopyResponse">Copy</button>
+            </div>
+          </div>
+          <div class="editor-container">
+            <div id="monacoResponseViewer"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Firebase Config Modal -->
+  <div class="modal-overlay" id="firebaseModal" style="display: none;">
+    <div class="modal">
+      <div class="modal-title">🔥 Cấu hình Firebase Google Auth</div>
+      <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px;">
+        Nhập Firebase Client Config dự án của bạn (lưu local):
+      </p>
+      <div class="modal-field">
+        <label for="fbApiKey">API Key</label>
+        <input type="text" id="fbApiKey" placeholder="AIzaSy..." />
+      </div>
+      <div class="modal-field">
+        <label for="fbAuthDomain">Auth Domain</label>
+        <input type="text" id="fbAuthDomain" placeholder="your-project.firebaseapp.com" />
+      </div>
+      <div class="modal-field">
+        <label for="fbProjectId">Project ID</label>
+        <input type="text" id="fbProjectId" placeholder="your-project-id" />
+      </div>
+      <div class="modal-field">
+        <label for="fbAppId">App ID</label>
+        <input type="text" id="fbAppId" placeholder="1:12345:web:abcdef" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-sm" id="btnCancelFbModal">Hủy</button>
+        <button type="button" class="btn-execute" id="btnSaveFbModal">Lưu & Đăng Nhập</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SERVICES = {
+      seoHelper: [
+        'fetchSeoMetadata',
+        'fetchSeoData',
+        'fetchSitemapXml',
+        'generateMetadata',
+      ],
+      auth: ['login'],
+      blog: [
+        'getBlogsByQuery',
+        'getBlogDetail',
+        'getBlogsByBlogGroupSlug',
+        'getBlogGroupsByQuery',
+        'getBlogGroupsBySlug',
+        'getByQuery',
+        'getBySlug',
+      ],
+      comment: ['createComment', 'getCommentsByRef'],
+      order: [
+        'placeOrder',
+        'getMyOrders',
+        'getOrderDetail',
+        'cancelOrder',
+        'getOrderTracking',
+        'requestRefund',
+        'submitReview',
+      ],
+      pageView: ['getPageView'],
+      product: [
+        'getProductsByQuery',
+        'getProductDetail',
+        'getProductsByProductGroupSlug',
+        'getProductGroupsBySlug',
+        'getProductGroupsByQuery',
+        'getByQuery',
+        'getBySlug',
+      ],
+      seo: ['getGlobalConfig', 'getMetaByUrl', 'getSitemapData'],
+      tracking: ['ingestEvent'],
+      userSubmit: ['submit'],
+    };
+
+    // Schema definition for CommonCriteria according to CRITERIA_GUIDE.md
+    const COMMON_CRITERIA_SCHEMA = {
+      type: 'object',
+      title: 'CommonCriteria',
+      properties: {
+        field: {
+          type: 'string',
+          enum: ['status', 'price', 'name', 'sku', 'classify', 'stock', 'category', 'brand'],
+          description: 'Tên trường dữ liệu muốn lọc (status, price, name, sku, classify, stock,...)',
+        },
+        Field: {
+          type: 'string',
+          description: 'Alias cho field (PascalCase)',
+        },
+        value: {
+          description: 'Giá trị muốn so sánh (chuỗi, số, boolean)',
+        },
+        Value: {
+          description: 'Alias cho value (PascalCase)',
+        },
+        type: {
+          type: 'string',
+          enum: ['equal', 'notequal', 'gt', 'lt', 'includes', 'startswith', 'endswith', 'dateRange'],
+          description: 'Loại phép so sánh (equal, notequal, gt, lt, includes, startswith, endswith, dateRange)',
+        },
+        Type: {
+          type: 'string',
+          enum: ['equal', 'notequal', 'gt', 'lt', 'includes', 'startswith', 'endswith', 'dateRange'],
+          description: 'Alias cho type (PascalCase)',
+        },
+      },
+      required: ['field', 'value', 'type'],
+    };
+
+    const METHOD_SCHEMAS = {
+      'auth.login': {
+        type: 'object',
+        properties: {
+          email: { type: 'string', description: 'Email tài khoản người dùng' },
+          password: { type: 'string', description: 'Mật khẩu đăng nhập thông thường' },
+          isFirebaseAuth: { type: 'boolean', description: 'Đặt true nếu đăng nhập qua Firebase Google' },
+          firebaseUserJson: { type: 'string', description: 'JSON String thông tin user & idToken từ Firebase' },
+        },
+        required: ['email', 'isFirebaseAuth'],
+      },
+      'product.getByQuery': {
+        type: 'object',
+        properties: {
+          pageNumber: { type: 'number', default: 1, description: 'Số trang (1-indexed)' },
+          pageSize: { type: 'number', default: 10, description: 'Kích thước trang' },
+          criteria: {
+            type: 'array',
+            items: COMMON_CRITERIA_SCHEMA,
+            description: 'Danh sách các điều kiện lọc dữ liệu (Criteria)',
+          },
+        },
+        required: ['pageNumber', 'pageSize', 'criteria'],
+      },
+      'product.getBySlug': {
+        type: 'object',
+        properties: {
+          slug: { type: 'string', description: 'Slug sản phẩm' },
+        },
+        required: ['slug'],
+      },
+      'seo.getMetaByUrl': {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Đường dẫn URL của trang' },
+        },
+        required: ['url'],
+      },
+      'seo.getGlobalConfig': {
+        type: 'object',
+        properties: {},
+      },
+    };
+
+    let activeService = 'seo';
+    let activeMethod = 'getGlobalConfig';
+    let monacoEditorInstance = null;
+    let monacoResponseViewerInstance = null;
+
+    const servicesListEl = document.getElementById('servicesList');
+    const currentServiceTagEl = document.getElementById('currentServiceTag');
+    const currentMethodNameEl = document.getElementById('currentMethodName');
+    const statusPill = document.getElementById('statusPill');
+    const latencyPill = document.getElementById('latencyPill');
+    const btnExecute = document.getElementById('btnExecute');
+    const tokenInput = document.getElementById('tokenInput');
+    const btnClearToken = document.getElementById('btnClearToken');
+
+    // Auto-load token from LocalStorage on page load
+    const savedToken = localStorage.getItem('optiflow_bearer_token');
+    if (savedToken) {
+      tokenInput.value = savedToken;
+    }
+
+    // Auto-save token to LocalStorage whenever user types or changes token input
+    tokenInput.oninput = () => {
+      const val = tokenInput.value.trim();
+      if (val) {
+        localStorage.setItem('optiflow_bearer_token', val);
+      } else {
+        localStorage.removeItem('optiflow_bearer_token');
+      }
+    };
+
+    btnClearToken.onclick = () => {
+      tokenInput.value = '';
+      localStorage.removeItem('optiflow_bearer_token');
+    };
+
+    // Register custom Monaco IntelliSense Snippets
+    function registerMonacoCriteriaSnippets() {
+      monaco.languages.registerCompletionItemProvider('json', {
+        provideCompletionItems: (_model, _position) => {
+          const suggestions = [
+            {
+              label: '✨ Mẫu Criteria: status = active',
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: '{\n  "field": "status",\n  "value": "active",\n  "type": "equal"\n}',
+              documentation: 'Lọc sản phẩm/bài viết đang hoạt động (Status = active)',
+            },
+            {
+              label: '✨ Mẫu Criteria: price > 500k',
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: '{\n  "field": "price",\n  "value": 500000,\n  "type": "gt"\n}',
+              documentation: 'Lọc giá bán lớn hơn 500.000đ (price > 500000)',
+            },
+            {
+              label: '✨ Mẫu Criteria Tự Do (Custom Criteria)',
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              // biome-ignore lint/suspicious/noTemplateCurlyInString: Snippet syntax
+              insertText: '{\n  "field": "${1:price}",\n  "value": ${2:100000},\n  "type": "${3|equal,notequal,gt,lt,includes,startswith,endswith,dateRange|}"\n}',
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: 'Tạo điều kiện lọc CommonCriteria tùy chỉnh',
+            },
+          ];
+          return { suggestions };
+        },
+      });
+    }
+
+    // Initialize Monaco Editors
+    function initMonaco() {
+      require.config({
+        paths: {
+          vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs',
+        },
+      });
+
+      require(['vs/editor/editor.main'], () => {
+        // Request Payload Editor
+        monacoEditorInstance = monaco.editor.create(
+          document.getElementById('monacoEditor'),
+          {
+            value: '{}',
+            language: 'json',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            fontSize: 13,
+            fontFamily: "'Fira Code', monospace",
+            minimap: { enabled: false },
+            lineNumbers: 'on',
+            scrollBeyondLastLine: false,
+            tabSize: 2,
+            formatOnPaste: true,
+            formatOnType: true,
+            suggestOnTriggerCharacters: true,
+            quickSuggestions: { strings: true, comments: true, other: true },
+          }
+        );
+
+        // Response Data Viewer (Read-only with code folding & syntax highlighting)
+        monacoResponseViewerInstance = monaco.editor.create(
+          document.getElementById('monacoResponseViewer'),
+          {
+            value: '// Nhấn "Run Request" hoặc Ctrl+Enter để thực thi API...',
+            language: 'json',
+            theme: 'vs-dark',
+            readOnly: true,
+            automaticLayout: true,
+            fontSize: 13,
+            fontFamily: "'Fira Code', monospace",
+            minimap: { enabled: false },
+            lineNumbers: 'on',
+            folding: true,
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            tabSize: 2,
+          }
+        );
+
+        // Add Ctrl+Enter Command to execute request
+        monacoEditorInstance.addCommand(
+          monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+          () => {
+            executeRequest();
+          }
+        );
+
+        registerMonacoCriteriaSnippets();
+        updateMonacoSchema();
+        loadPayloadFile(activeService, activeMethod);
+      });
+    }
+
+    // Update JSON Schema for current API method
+    function updateMonacoSchema() {
+      if (!window.monaco) return;
+      const methodKey = `${activeService}.${activeMethod}`;
+      const schema = METHOD_SCHEMAS[methodKey] || {
+        type: 'object',
+        properties: {},
+      };
+
+      monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+        validate: true,
+        allowComments: false,
+        schemas: [
+          {
+            uri: `http://optiflow-sdk/schemas/${methodKey}.json`,
+            fileMatch: ['*'],
+            schema,
+          },
+        ],
+      });
+    }
+
+    // Render Sidebar API List
+    function renderSidebar(filter = '') {
+      servicesListEl.innerHTML = '';
+      const filterLower = filter.toLowerCase();
+
+      Object.keys(SERVICES).forEach((service) => {
+        const methods = SERVICES[service].filter((m) =>
+          `${service}.${m}`.toLowerCase().includes(filterLower)
+        );
+
+        if (methods.length === 0) return;
+
+        const groupEl = document.createElement('div');
+        groupEl.className = 'service-group';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'service-title';
+        titleEl.innerHTML = `<span>${service}</span><span class="method-badge">${methods.length}</span>`;
+        groupEl.appendChild(titleEl);
+
+        methods.forEach((method) => {
+          const itemEl = document.createElement('div');
+          itemEl.className = `method-item ${
+            service === activeService && method === activeMethod ? 'active' : ''
+          }`;
+          itemEl.innerText = method;
+          itemEl.onclick = () => selectMethod(service, method);
+          groupEl.appendChild(itemEl);
+        });
+
+        servicesListEl.appendChild(groupEl);
+      });
+    }
+
+    // Select Method
+    async function selectMethod(service, method) {
+      activeService = service;
+      activeMethod = method;
+      currentServiceTagEl.innerText = service;
+      currentMethodNameEl.innerText = method;
+
+      renderSidebar(document.getElementById('searchInput').value);
+      updateMonacoSchema();
+      await loadPayloadFile(service, method);
+    }
+
+    // Load Payload JSON into Monaco
+    async function loadPayloadFile(service, method) {
+      try {
+        const res = await fetch(`/api/payloads/${service}/${method}`);
+        const data = await res.json();
+        const jsonStr = JSON.stringify(data, null, 2);
+        if (monacoEditorInstance) {
+          monacoEditorInstance.setValue(jsonStr);
+        }
+      } catch (_err) {
+        if (monacoEditorInstance) {
+          monacoEditorInstance.setValue('{}');
+        }
+      }
+    }
+
+    // Get current JSON value from Monaco
+    function getEditorValue() {
+      if (monacoEditorInstance) {
+        return monacoEditorInstance.getValue();
+      }
+      return '{}';
+    }
+
+    // Execute Request
+    async function executeRequest() {
+      let payload = {};
+      try {
+        payload = JSON.parse(getEditorValue());
+      } catch (e) {
+        alert(`Lỗi JSON Payload: ${e.message}`);
+        return;
+      }
+
+      const baseUrl = document.getElementById('baseUrlInput').value;
+      const orgId = document.getElementById('orgIdInput').value;
+      const token = tokenInput.value;
+
+      btnExecute.disabled = true;
+      btnExecute.innerHTML = '<span>⏳ Processing...</span>';
+      if (monacoResponseViewerInstance) {
+        monacoResponseViewerInstance.setValue('// ... Requesting server ...');
+      }
+      statusPill.style.display = 'none';
+      latencyPill.innerText = '';
+
+      try {
+        const res = await fetch('/api/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            service: activeService,
+            method: activeMethod,
+            payload,
+            config: { baseUrl, orgId, token },
+          }),
+        });
+
+        const data = await res.json();
+
+        latencyPill.innerText = `⚡ ${data.duration} ms`;
+
+        if (data.success) {
+          statusPill.className = 'status-pill success';
+          statusPill.innerText = '200 OK';
+          statusPill.style.display = 'inline-flex';
+          if (monacoResponseViewerInstance) {
+            monacoResponseViewerInstance.setValue(JSON.stringify(data.result, null, 2));
+          }
+
+          // Auto-save Token if calling auth.login and received token!
+          if (activeService === 'auth' && activeMethod === 'login') {
+            const receivedToken = data.result?.data?.token || data.result?.token;
+            if (receivedToken) {
+              tokenInput.value = receivedToken;
+              localStorage.setItem('optiflow_bearer_token', receivedToken);
+              alert('🔑 Đăng nhập thành công! Đã tự động lưu Bearer Token vào LocalStorage.');
+            }
+          }
+        } else {
+          statusPill.className = 'status-pill error';
+          statusPill.innerText = `ERROR ${data.error?.code || '500'}`;
+          statusPill.style.display = 'inline-flex';
+          if (monacoResponseViewerInstance) {
+            monacoResponseViewerInstance.setValue(JSON.stringify(data.error, null, 2));
+          }
+        }
+      } catch (err) {
+        statusPill.className = 'status-pill error';
+        statusPill.innerText = 'FETCH ERROR';
+        statusPill.style.display = 'inline-flex';
+        if (monacoResponseViewerInstance) {
+          monacoResponseViewerInstance.setValue(`{\n  "error": "${err.message}"\n}`);
+        }
+      } finally {
+        btnExecute.disabled = false;
+        btnExecute.innerHTML = '<span>▶ Run Request</span><span class="kbd-shortcut">Ctrl+Enter</span>';
+      }
+    }
+
+    // --- FIREBASE GOOGLE LOGIN FLOW ---
+    const btnFirebaseLogin = document.getElementById('btnFirebaseLogin');
+    const firebaseModal = document.getElementById('firebaseModal');
+    const fbApiKey = document.getElementById('fbApiKey');
+    const fbAuthDomain = document.getElementById('fbAuthDomain');
+    const fbProjectId = document.getElementById('fbProjectId');
+    const fbAppId = document.getElementById('fbAppId');
+
+    const DEFAULT_FIREBASE_CONFIG = {
+      apiKey: 'AIzaSyBoP1q5CkhY1WB3tO_AzYRivTy76-77-no',
+      authDomain: 'project-2e604.firebaseapp.com',
+      databaseURL: 'https://project-2e604-default-rtdb.asia-southeast1.firebasedatabase.app',
+      projectId: 'project-2e604',
+      storageBucket: 'project-2e604.firebasestorage.app',
+      messagingSenderId: '685934003093',
+      appId: '1:685934003093:web:652b48d2ef4a6484caac9c',
+      measurementId: 'G-P7W1CRC2YF',
+    };
+
+    // Load saved Firebase Config from LocalStorage or use default
+    function getFirebaseConfig() {
+      const saved = localStorage.getItem('optiflow_firebase_config');
+      return saved ? JSON.parse(saved) : DEFAULT_FIREBASE_CONFIG;
+    }
+
+    function saveFirebaseConfig(config) {
+      localStorage.setItem('optiflow_firebase_config', JSON.stringify(config));
+    }
+
+    // Trigger Google Auth Popup using Firebase ES Modules & auto call auth.login API
+    async function triggerGoogleLogin(config) {
+      try {
+        if (!window.FirebaseSDK) {
+          alert('Đang tải Firebase SDK, vui lòng thử lại sau 2 giây...');
+          return;
+        }
+
+        const { initializeApp, getApps, getApp, getAuth, GoogleAuthProvider, signInWithPopup } = window.FirebaseSDK;
+
+        const app = getApps().length === 0 ? initializeApp(config) : getApp();
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        const userCredential = await signInWithPopup(auth, provider);
+        const user = userCredential.user;
+        const idToken = await user.getIdToken();
+
+        const firebaseUserData = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          idToken: idToken,
+        };
+
+        const loginPayload = {
+          email: user.email || '',
+          password: '',
+          isFirebaseAuth: true,
+          firebaseUserJson: JSON.stringify(firebaseUserData),
+        };
+
+        // Switch active service to auth.login
+        await selectMethod('auth', 'login');
+        if (monacoEditorInstance) {
+          monacoEditorInstance.setValue(JSON.stringify(loginPayload, null, 2));
+        }
+
+        // Auto execute API call!
+        await executeRequest();
+      } catch (err) {
+        alert(`Lỗi đăng nhập Firebase Google: ${err.message}`);
+      }
+    }
+
+    btnFirebaseLogin.onclick = () => {
+      const config = getFirebaseConfig();
+      if (!config?.apiKey) {
+        firebaseModal.style.display = 'flex';
+      } else {
+        triggerGoogleLogin(config);
+      }
+    };
+
+    document.getElementById('btnCancelFbModal').onclick = () => {
+      firebaseModal.style.display = 'none';
+    };
+
+    document.getElementById('btnSaveFbModal').onclick = () => {
+      const config = {
+        apiKey: fbApiKey.value.trim(),
+        authDomain: fbAuthDomain.value.trim(),
+        projectId: fbProjectId.value.trim(),
+        appId: fbAppId.value.trim(),
+      };
+
+      if (!config.apiKey || !config.authDomain) {
+        alert('Vui lòng nhập đầy đủ API Key và Auth Domain!');
+        return;
+      }
+
+      saveFirebaseConfig(config);
+      firebaseModal.style.display = 'none';
+      triggerGoogleLogin(config);
+    };
+
+    // Auto-fill modal if config exists
+    const existingConfig = getFirebaseConfig();
+    if (existingConfig) {
+      fbApiKey.value = existingConfig.apiKey || '';
+      fbAuthDomain.value = existingConfig.authDomain || '';
+      fbProjectId.value = existingConfig.projectId || '';
+      fbAppId.value = existingConfig.appId || '';
+    }
+
+    // Format JSON
+    document.getElementById('btnFormatJson').onclick = () => {
+      if (monacoEditorInstance) {
+        monacoEditorInstance.getAction('editor.action.formatDocument').run();
+      }
+    };
+
+    // Reset Payload
+    document.getElementById('btnResetPayload').onclick = () => {
+      loadPayloadFile(activeService, activeMethod);
+    };
+
+    // Collapse All Response Tree
+    document.getElementById('btnCollapseAll').onclick = () => {
+      if (monacoResponseViewerInstance) {
+        monacoResponseViewerInstance.getAction('editor.foldLevel2').run();
+      }
+    };
+
+    // Expand All Response Tree
+    document.getElementById('btnExpandAll').onclick = () => {
+      if (monacoResponseViewerInstance) {
+        monacoResponseViewerInstance.getAction('editor.unfoldAll').run();
+      }
+    };
+
+    // Copy Response
+    document.getElementById('btnCopyResponse').onclick = () => {
+      if (monacoResponseViewerInstance) {
+        navigator.clipboard.writeText(monacoResponseViewerInstance.getValue());
+      }
+    };
+
+    // Search input
+    document.getElementById('searchInput').oninput = (e) => {
+      renderSidebar(e.target.value);
+    };
+
+    btnExecute.onclick = executeRequest;
+
+    // Init
+    renderSidebar();
+    initMonaco();
+  </script>
+</body>
+</html>
