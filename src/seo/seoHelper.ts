@@ -265,11 +265,55 @@ export async function fetchSitemapXml(
   const { sdk, request } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
-  const { targetUrl, originDomain } = resolvePublicUrl(
+  let { targetUrl, originDomain } = resolvePublicUrl(
     options.url,
     request,
     options.domain
   );
+
+  // Nếu originDomain chưa xác định hoặc bị dính IP nội bộ/fallback, cố gắng fetch Global SEO Config từ gRPC để lấy domain thật
+  if (
+    (!originDomain ||
+      originDomain === 'https://optiflow.vn' ||
+      isLocalHost(originDomain)) &&
+    seoClient
+  ) {
+    try {
+      const globalRes = await seoClient.getGlobalConfig({});
+      if (globalRes?.success && globalRes.data?.domain) {
+        let realDomain = globalRes.data.domain.trim();
+        if (realDomain) {
+          if (
+            !realDomain.startsWith('http://') &&
+            !realDomain.startsWith('https://')
+          ) {
+            realDomain = `https://${realDomain}`;
+          }
+          realDomain = realDomain.replace(/\/+$/, '');
+          originDomain = realDomain;
+
+          // Đè lại targetUrl với domain thật nếu targetUrl đang bị dính IP nội bộ
+          if (targetUrl) {
+            try {
+              const parsed = new URL(targetUrl);
+              if (isLocalHost(parsed.host)) {
+                targetUrl = `${originDomain}${parsed.pathname}${parsed.search}`;
+              }
+            } catch {
+              targetUrl = `${originDomain}/sitemap.xml`;
+            }
+          } else {
+            targetUrl = `${originDomain}/sitemap.xml`;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(
+        '[OptiFlow SDK] GetGlobalConfig for Sitemap domain fallback failed:',
+        err
+      );
+    }
+  }
 
   let xmlContent: string | undefined;
 
@@ -284,14 +328,21 @@ export async function fetchSitemapXml(
     }
   }
 
+  const replaceDomain =
+    originDomain &&
+    originDomain !== 'https://optiflow.vn' &&
+    !isLocalHost(originDomain)
+      ? originDomain
+      : options.domain || 'https://ladosite.vn';
+
+  const cleanReplaceDomain = replaceDomain.replace(/\/+$/, '');
+
   if (xmlContent) {
-    // Tự động làm sạch và thay thế IP nội bộ (0.0.0.0:4001, localhost...) trong XML trả về bằng public domain thật
-    if (originDomain && originDomain !== 'https://optiflow.vn') {
-      xmlContent = xmlContent.replace(
-        /https?:\/\/(?:0\.0\.0\.0|127\.0\.0\.1|localhost)(?::\d+)?/g,
-        originDomain
-      );
-    }
+    // Tự động làm sạch và thay thế TẤT CẢ chuỗi IP nội bộ (0.0.0.0:xxxx, 127.0.0.1:xxxx, localhost:xxxx) trong XML trả về bằng domain thật
+    xmlContent = xmlContent.replace(
+      /https?:\/\/(?:0\.0\.0\.0|127\.0\.0\.1|localhost)(?::\d+)?/g,
+      cleanReplaceDomain
+    );
     return xmlContent;
   }
 
@@ -299,7 +350,7 @@ export async function fetchSitemapXml(
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>${originDomain}</loc>
+    <loc>${cleanReplaceDomain}</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
