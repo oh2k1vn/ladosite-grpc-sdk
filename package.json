@@ -29,6 +29,8 @@
     "format": "biome format --write .",
     "playground": "tsx playground/test-cli.ts",
     "playground:web": "tsx playground/server.ts",
+    "build:tag": "node scripts/build-and-tag.js",
+    "release": "node scripts/build-and-tag.js",
     "prepare": "npm run build"
   },
   "keywords": [
