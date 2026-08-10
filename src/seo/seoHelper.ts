@@ -254,66 +254,24 @@ export function resolvePublicUrl(
 }
 
 /**
- * Tự động fetch XML sitemap từ gRPC API (GetSitemapData) với cơ chế bọc try-catch tuyệt đối an toàn.
- * Trả về chuỗi XML chuẩn từ gRPC API mà không tự động sửa nội dung text.
+ * Fetch XML sitemap từ gRPC API (GetSitemapData).
+ * Trả về dữ liệu XML trực tiếp từ API.
  */
 export async function fetchSitemapXml(
   options: FetchSitemapOptions = {}
 ): Promise<string> {
-  const { sdk, request } = options;
+  const { sdk, url, domain, request } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
-  let reqPath = options.url || '';
-  if (!reqPath && request) {
-    try {
-      reqPath = new URL(request.url).pathname;
-    } catch {
-      reqPath = '';
-    }
-  }
-
-  // Chuẩn hóa parameter url gửi lên gRPC API GetSitemapData:
-  // Mặc định GetSitemapData url là "/" khi truy cập root sitemap (/sitemap.xml hoặc / hoặc rỗng)
-  let payloadUrl = reqPath;
-  if (
-    !payloadUrl ||
-    payloadUrl === '/' ||
-    payloadUrl === '/sitemap.xml' ||
-    payloadUrl === 'sitemap.xml'
-  ) {
-    payloadUrl = '/';
-  } else {
-    try {
-      if (
-        payloadUrl.startsWith('http://') ||
-        payloadUrl.startsWith('https://')
-      ) {
-        payloadUrl = new URL(payloadUrl).pathname;
-      }
-    } catch {
-      // keep original string
-    }
-    if (payloadUrl === '/sitemap.xml') {
-      payloadUrl = '/';
-    }
-  }
+  const { originDomain, targetUrl } = resolvePublicUrl(url, request, domain);
+  const payloadUrl = url || domain || originDomain || targetUrl || '';
 
   if (seoClient) {
-    try {
-      const res = await seoClient.getSitemapData({ url: payloadUrl });
-      if (res?.success && res.xmlContent) {
-        // Trả kết quả trực tiếp từ gRPC API mà không tự động sửa text XML
-        return res.xmlContent;
-      }
-    } catch (err) {
-      console.warn('[OptiFlow SDK] GetSitemapData failed safely:', err);
-    }
+    const res = await seoClient.getSitemapData({ url: payloadUrl });
+    return res?.xmlContent || '';
   }
 
-  // Fallback XML sitemap an toàn khi không fetch được từ API
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-</urlset>`;
+  return '';
 }
 
 /**

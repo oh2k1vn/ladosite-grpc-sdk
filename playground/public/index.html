@@ -336,6 +336,31 @@
       cursor: not-allowed;
     }
 
+    .btn-inspect {
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-inspect:hover {
+      background: var(--bg-hover);
+      color: var(--text-main);
+      border-color: var(--primary);
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+    }
+    .btn-inspect:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .kbd-shortcut {
       font-size: 0.65rem;
       background: rgba(255, 255, 255, 0.2);
@@ -540,10 +565,15 @@
           <span class="method-tag" id="currentServiceTag">seo</span>
           <span id="currentMethodName">getGlobalConfig</span>
         </div>
-        <button type="button" class="btn-execute" id="btnExecute">
-          <span>▶ Run Request</span>
-          <span class="kbd-shortcut">Ctrl+Enter</span>
-        </button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" class="btn-inspect" id="btnLogConfig" title="Log cấu hình Header & Payload của API">
+            <span>📋 Log Headers & Payload</span>
+          </button>
+          <button type="button" class="btn-execute" id="btnExecute">
+            <span>▶ Run Request</span>
+            <span class="kbd-shortcut">Ctrl+Enter</span>
+          </button>
+        </div>
       </div>
 
       <!-- Split Panes -->
@@ -746,6 +776,7 @@
     const statusPill = document.getElementById('statusPill');
     const latencyPill = document.getElementById('latencyPill');
     const btnExecute = document.getElementById('btnExecute');
+    const btnLogConfig = document.getElementById('btnLogConfig');
     const tokenInput = document.getElementById('tokenInput');
     const btnClearToken = document.getElementById('btnClearToken');
 
@@ -1187,6 +1218,89 @@
     };
 
     btnExecute.onclick = executeRequest;
+
+    // Inspect & Log Header Configuration and Payload
+    async function logHeaderAndPayloadConfig() {
+      let payload = {};
+      try {
+        payload = JSON.parse(getEditorValue());
+      } catch (e) {
+        alert(`Lỗi JSON Payload: ${e.message}`);
+        return;
+      }
+
+      const baseUrl = document.getElementById('baseUrlInput').value;
+      const orgId = document.getElementById('orgIdInput').value;
+      const token = tokenInput.value;
+
+      btnLogConfig.disabled = true;
+      btnLogConfig.innerHTML = '<span>⏳ Inspecting...</span>';
+      statusPill.style.display = 'none';
+      latencyPill.innerText = '';
+
+      try {
+        const res = await fetch('/api/inspect-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            service: activeService,
+            method: activeMethod,
+            payload,
+            config: { baseUrl, orgId, token },
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          // Log explicitly to Browser Developer Console with group formatting
+          console.groupCollapsed(
+            `%c[OPTIFLOW API CONFIG] ${activeService}/${activeMethod}`,
+            'color: #3b82f6; font-weight: bold; padding: 2px 4px; background: #dbeafe; border-radius: 3px;'
+          );
+          console.log('🌐 Endpoint URL:', data.endpointUrl);
+          console.log('🔑 Headers / Metadata (Cấu hình Header):', data.headers);
+          console.log('📦 Payload (Cấu hình Payload):', data.payload);
+          console.groupEnd();
+
+          statusPill.className = 'status-pill success';
+          statusPill.innerText = 'LOGGED TO CONSOLE';
+          statusPill.style.display = 'inline-flex';
+
+          const output = {
+            _info: '📋 Cấu hình Header (Metadata) và Payload của API (Đã log ra Console)',
+            service: activeService,
+            method: activeMethod,
+            endpointUrl: data.endpointUrl,
+            headers: data.headers,
+            payload: data.payload,
+          };
+
+          if (monacoResponseViewerInstance) {
+            monacoResponseViewerInstance.setValue(JSON.stringify(output, null, 2));
+          }
+        } else {
+          statusPill.className = 'status-pill error';
+          statusPill.innerText = 'INSPECT ERROR';
+          statusPill.style.display = 'inline-flex';
+          if (monacoResponseViewerInstance) {
+            monacoResponseViewerInstance.setValue(JSON.stringify(data.error, null, 2));
+          }
+        }
+      } catch (err) {
+        statusPill.className = 'status-pill error';
+        statusPill.innerText = 'INSPECT ERROR';
+        statusPill.style.display = 'inline-flex';
+        if (monacoResponseViewerInstance) {
+          monacoResponseViewerInstance.setValue(`{\n  "error": "${err.message}"\n}`);
+        }
+      } finally {
+        btnLogConfig.disabled = false;
+        btnLogConfig.innerHTML = '<span>📋 Log Headers & Payload</span>';
+      }
+    }
+
+    btnLogConfig.onclick = logHeaderAndPayloadConfig;
 
     // Init
     renderSidebar();

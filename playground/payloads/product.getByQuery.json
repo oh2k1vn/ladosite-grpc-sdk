@@ -1,11 +1,5 @@
 {
   "pageNumber": 1,
   "pageSize": 10,
-  "criteria": [
-    {
-      "field": "status",
-      "value": "active",
-      "type": "equal"
-    }
-  ]
+  "criteria": []
 }

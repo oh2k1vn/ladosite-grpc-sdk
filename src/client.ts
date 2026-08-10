@@ -99,6 +99,7 @@ export type WrappedClient<T, _M = Record<string, unknown>> = T;
 
 export class OptiFlowGrpcSDK {
   private readonly transport: GrpcWebFetchTransport;
+  private config: GrpcSDKConfig;
   private token: string | null = null;
   private tokenGetter?: () => string | null | undefined;
 
@@ -114,8 +115,8 @@ export class OptiFlowGrpcSDK {
   public readonly userSubmit: WrappedUserSubmitServiceClient;
 
   constructor(config: GrpcSDKConfig) {
+    this.config = config;
     const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
-    const publicKey = config.publicKey || DEFAULT_PUBLIC_KEY;
     const isDebug = config.debug !== false;
 
     if (typeof config.token === 'function') {
@@ -131,27 +132,7 @@ export class OptiFlowGrpcSDK {
       interceptors: [
         {
           interceptUnary(next, method, input, options) {
-            options.meta = {
-              checksum: generateChecksum(publicKey),
-              'x-org': config.orgId,
-              'x-requested-at': Date.now().toString(),
-              'x-user-name': config.userName || DEFAULT_USER_NAME,
-              'x-userId': config.userId || DEFAULT_USER_ID,
-              'x-display-name': config.displayName || DEFAULT_DISPLAY_NAME,
-              'user-agent': config.userAgent || DEFAULT_USER_AGENT,
-              ...options.meta,
-            };
-
-            // Dynamically resolve and attach authorization token if not already present
-            if (!options.meta.authorization && !options.meta.Authorization) {
-              let activeToken = self.token;
-              if (self.tokenGetter) {
-                activeToken = self.tokenGetter() || null;
-              }
-              if (activeToken) {
-                options.meta.authorization = `Bearer ${activeToken}`;
-              }
-            }
+            options.meta = self.getRequestMetadata(options.meta as Record<string, string>);
 
             const isBrowser = typeof window !== 'undefined';
 
@@ -313,6 +294,36 @@ export class OptiFlowGrpcSDK {
       return !!this.tokenGetter();
     }
     return this.token !== null;
+  }
+
+  /**
+   * Returns the header/metadata configuration object generated for API requests.
+   * Maps to lines 134-143 configuration logic.
+   */
+  public getRequestMetadata(extraMeta?: Record<string, string>): Record<string, string> {
+    const publicKey = this.config.publicKey || DEFAULT_PUBLIC_KEY;
+    const meta: Record<string, string> = {
+      checksum: generateChecksum(publicKey),
+      'x-org': this.config.orgId,
+      'x-requested-at': Date.now().toString(),
+      'x-user-name': this.config.userName || DEFAULT_USER_NAME,
+      'x-userId': this.config.userId || DEFAULT_USER_ID,
+      'x-display-name': this.config.displayName || DEFAULT_DISPLAY_NAME,
+      'user-agent': this.config.userAgent || DEFAULT_USER_AGENT,
+      ...extraMeta,
+    };
+
+    if (!meta.authorization && !meta.Authorization) {
+      let activeToken = this.token;
+      if (this.tokenGetter) {
+        activeToken = this.tokenGetter() || null;
+      }
+      if (activeToken) {
+        meta.authorization = `Bearer ${activeToken}`;
+      }
+    }
+
+    return meta;
   }
 }
 

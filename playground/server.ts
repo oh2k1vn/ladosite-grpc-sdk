@@ -117,6 +117,59 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // POST /api/inspect-config
+  if (req.method === 'POST' && urlParts === '/api/inspect-config') {
+    let bodyStr = '';
+    req.on('data', (chunk) => {
+      bodyStr += chunk;
+    });
+
+    req.on('end', () => {
+      try {
+        const body = JSON.parse(bodyStr);
+        const { service, method, payload, config } = body;
+
+        const baseUrl =
+          config?.baseUrl ||
+          process.env.OPTIFLOW_GRPC_URL ||
+          'https://grpc.optiflow.vn';
+        const orgId =
+          config?.orgId ||
+          process.env.OPTIFLOW_ORG_ID ||
+          '8581da5384b349e68575dfb8';
+        const token = config?.token || undefined;
+
+        const sdk = new OptiFlowGrpcSDK({
+          baseUrl,
+          orgId,
+          token,
+          debug: false,
+        });
+
+        const headers = sdk.getRequestMetadata();
+        const endpointUrl = `${baseUrl.replace(/\/$/, '')}/${service}/${method}`;
+
+        respondJson(200, {
+          success: true,
+          service,
+          method,
+          endpointUrl,
+          headers,
+          payload: payload || {},
+        });
+      } catch (err: unknown) {
+        respondJson(400, {
+          success: false,
+          error: {
+            code: 'INSPECT_ERROR',
+            message: String(err),
+          },
+        });
+      }
+    });
+    return;
+  }
+
   // POST /api/execute
   if (req.method === 'POST' && urlParts === '/api/execute') {
     let bodyStr = '';
