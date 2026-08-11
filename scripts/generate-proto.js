@@ -171,6 +171,7 @@ export * from './generated/wrapped-clients';
 
   indexContent += `\n// Export SEO helpers & components\n`;
   indexContent += `export * from './seo/seoHelper';\n`;
+  indexContent += `export * from './seo/sitemap-helper';\n`;
   indexContent += `export * from './seo/generateMetadata';\n`;
   indexContent += `export * from './seo/SeoScripts';\n`;
 

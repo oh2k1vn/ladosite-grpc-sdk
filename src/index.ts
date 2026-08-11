@@ -32,5 +32,6 @@ export type * from './generated/Protos/user_submit.client';
 
 // Export SEO helpers & components
 export * from './seo/seoHelper';
+export * from './seo/sitemap-helper';
 export * from './seo/generateMetadata';
 export * from './seo/SeoScripts';

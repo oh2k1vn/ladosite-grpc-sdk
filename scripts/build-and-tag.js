@@ -70,22 +70,20 @@ async function main() {
   fs.writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf-8');
   console.log(`✅ Version updated in package.json: ${oldVersion} -> ${newVersion}`);
 
-  // 3. Git Add, Commit & Tag
-  console.log('\n🏷️ Step 3: Git Commit & Tag...');
+  // 3. Git Add, Commit, Tag & Push
+  console.log('\n🏷️ Step 3: Git Commit, Tag & Push to GitHub...');
   try {
-    runCommand('git add package.json');
-    if (fs.existsSync(path.join(rootDir, 'package-lock.json'))) {
-      runCommand('git add package-lock.json', true);
-    }
+    runCommand('git add .');
     runCommand(`git commit -m "chore(release): v${newVersion}"`, true);
     runCommand(`git tag v${newVersion}`);
+    runCommand('git push');
+    runCommand(`git push origin v${newVersion}`);
 
     console.log('--------------------------------------------------');
-    console.log(`🎉 Thành công! Đã build & tạo Git Tag: v${newVersion}`);
-    console.log(`📌 Đẩy tag lên repository bằng lệnh: git push && git push origin v${newVersion}`);
+    console.log(`🎉 Thành công! Đã build, tag & đẩy v${newVersion} lên GitHub!`);
     console.log('--------------------------------------------------');
   } catch (gitErr) {
-    console.warn('\n⚠️ Cảnh báo Git Tag: Không thể tạo git commit/tag động (kiểm tra lại git repo).');
+    console.warn('\n⚠️ Cảnh báo Git Tag/Push: Kiểm tra kết nối hoặc quyền push repository.');
     console.log(`✅ Đã hoàn tất cập nhật package.json sang version ${newVersion}`);
   }
 }

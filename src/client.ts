@@ -204,9 +204,9 @@ export class OptiFlowGrpcSDK {
                       if (isHalted) {
                         console.error(
                           `🔴 [gRPC HALTED ERROR] ${method.service.typeName}/${method.name}\n` +
-                            `Code: ${err.code}\n` +
-                            `Message: ${err.message}\n` +
-                            `Meta:`,
+                          `Code: ${err.code}\n` +
+                          `Message: ${err.message}\n` +
+                          `Meta:`,
                           err.meta
                         );
                       } else {

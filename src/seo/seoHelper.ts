@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import type { OptiFlowGrpcSDK } from '../client';
+import { type OptiFlowGrpcSDK } from '../client';
 import type {
   SeoGlobalConfigData,
   SeoGlobalConfigResponse,
@@ -141,31 +141,6 @@ export async function fetchSeoData(
   };
 }
 
-export interface FetchSitemapOptions {
-  /**
-   * Instance của OptiFlowGrpcSDK.
-   */
-  sdk?: OptiFlowGrpcSDK;
-  /**
-   * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
-   */
-  seoClient?: WrappedSeoServiceClient;
-  /**
-   * URL request hoặc Base URL truyền vào API gRPC GetSitemapData.
-   * Ví dụ: "https://ladosite.vn" hoặc URL request hiện tại.
-   */
-  url?: string;
-  /**
-   * Tùy chọn truyền Domain chính thức để override nếu request bị nhận diện IP nội bộ 0.0.0.0.
-   * Ví dụ: "https://ladosite.vn"
-   */
-  domain?: string;
-  /**
-   * Request object trong Route Handler của Next.js (nếu có).
-   */
-  request?: Request;
-}
-
 function isLocalHost(host: string): boolean {
   return (
     host.includes('0.0.0.0') ||
@@ -253,44 +228,6 @@ export function resolvePublicUrl(
   return { targetUrl, originDomain };
 }
 
-/**
- * Fetch XML sitemap từ gRPC API (GetSitemapData).
- * Trả về dữ liệu XML trực tiếp từ API.
- */
-export async function fetchSitemapXml(
-  options: FetchSitemapOptions = {}
-): Promise<string> {
-  const { sdk, url, domain, request } = options;
-  const seoClient = options.seoClient || sdk?.seo;
-
-  const { originDomain, targetUrl } = resolvePublicUrl(url, request, domain);
-  const payloadUrl = url || domain || originDomain || targetUrl || '';
-
-  if (seoClient) {
-    const res = await seoClient.getSitemapData({ url: payloadUrl });
-    return res?.xmlContent || '';
-  }
-
-  return '';
-}
-
-/**
- * Helper tạo Web Standard Response (chuẩn XML) cho Next.js Route Handler (`app/sitemap.xml/route.ts`).
- * Trả về Response với Content-Type: application/xml và Cache-Control tối ưu.
- */
-export async function handleSitemapRequest(
-  options: FetchSitemapOptions = {}
-): Promise<Response> {
-  const xmlContent = await fetchSitemapXml(options);
-  return new Response(xmlContent, {
-    headers: {
-      'Content-Type': 'application/xml; charset=utf-8',
-      'Cache-Control':
-        'public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400',
-    },
-  });
-}
-
 export interface FetchRobotsOptions {
   /**
    * Instance của OptiFlowGrpcSDK.
@@ -370,11 +307,28 @@ export async function fetchRobotsTxt(
 
 /**
  * Helper tạo Web Standard Response (chuẩn text/plain) cho Next.js Route Handler (`app/robots.txt/route.ts`).
- * Trả về Response với Content-Type: text/plain và Cache-Control tối ưu.
+ * Hỗ trợ nhận trực tiếp Request object hoặc FetchRobotsOptions object.
  */
 export async function handleRobotsTxtRequest(
-  options: FetchRobotsOptions = {}
+  optionsOrRequest?: FetchRobotsOptions | Request,
+  extraOptions?: FetchRobotsOptions
 ): Promise<Response> {
+  let options: FetchRobotsOptions = {};
+
+  if (optionsOrRequest instanceof Request) {
+    options = { request: optionsOrRequest, ...extraOptions };
+  } else if (
+    optionsOrRequest &&
+    typeof (optionsOrRequest as Request).url === 'string' &&
+    !(optionsOrRequest as FetchRobotsOptions).sdk &&
+    !(optionsOrRequest as FetchRobotsOptions).seoClient &&
+    !(optionsOrRequest as FetchRobotsOptions).request
+  ) {
+    options = { request: optionsOrRequest as Request, ...extraOptions };
+  } else if (optionsOrRequest) {
+    options = { ...(optionsOrRequest as FetchRobotsOptions), ...extraOptions };
+  }
+
   const robotsContent = await fetchRobotsTxt(options);
   return new Response(robotsContent, {
     headers: {
