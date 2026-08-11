@@ -66,11 +66,12 @@ export async function handleDynamicSitemap({
   cacheControl = 'public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400',
   domain,
 }: HandleSitemapOptions): Promise<Response> {
-  // 1. Nếu có params, kiểm tra đuôi .xml (Dành cho Dynamic Route [slug])
+  // 1. Nếu có params, kiểm tra đuôi .xml (Dành cho Dynamic Route [slug] hoặc [slug].xml)
   if (params) {
     const resolvedParams = await params;
     const slug = resolvedParams?.slug;
-    if (slug && !slug.endsWith('.xml')) {
+    const url = new URL(request.url);
+    if (slug && !slug.endsWith('.xml') && !url.pathname.endsWith('.xml')) {
       notFound();
     }
   }
