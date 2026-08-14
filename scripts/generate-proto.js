@@ -143,25 +143,23 @@ type UnwrapUnaryCall<T> = T extends (...args: any[]) => UnaryCall<any, infer O>
 
   // 5. Generate/Update src/index.ts to automatically export all generated files and their client types
   const indexFilePath = path.join(rootDir, 'src', 'index.ts');
-  let indexContent = `// Export core SDK client and configuration
-export { OptiFlowGrpcSDK, GrpcSDKConfig, grpcSDK, WrappedClient } from './client';
+  let indexContent = `// Core SDK Client & Lỗi gRPC
+export { OptiFlowGrpcSDK, GrpcSDKConfig, grpcSDK, RpcError, WrappedClient } from './client';
 export * from './criteria';
 
-// Export wrapped clients
-export * from './generated/wrapped-clients';
+// Type của Wrapped Clients
+export type * from './generated/wrapped-clients';
 
-// Re-export only the message types (Request/Response interfaces) from Protos.
-// We DO NOT export raw ServiceClient classes from *.client files to maximize security
-// and ensure consumers always route their requests through the secure SDK class wrapper.
+// Type DTO (Request/Response) - Tránh rác runtime
 `;
 
   const protoNames = files.map((file) => path.basename(file, '.proto')).sort();
 
   protoNames.forEach((name) => {
-    indexContent += `export * from './generated/Protos/${name}';\n`;
+    indexContent += `export type * from './generated/Protos/${name}';\n`;
   });
 
-  indexContent += `\n// Re-export type-only ServiceClient classes to allow type annotations without exposing raw classes at runtime.\n`;
+  indexContent += `\n// Type của Service Clients\n`;
   protoNames.forEach((name) => {
     const clientPath = path.join(outDir, 'Protos', `${name}.client.ts`);
     if (fs.existsSync(clientPath)) {
@@ -169,7 +167,7 @@ export * from './generated/wrapped-clients';
     }
   });
 
-  indexContent += `\n// Export SEO helpers & components\n`;
+  indexContent += `\n// SEO Helpers & Components\n`;
   indexContent += `export * from './seo/seoHelper';\n`;
   indexContent += `export * from './seo/sitemap-helper';\n`;
   indexContent += `export * from './seo/generateMetadata';\n`;

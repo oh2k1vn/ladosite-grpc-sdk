@@ -42,7 +42,7 @@ function runCommand(cmd, ignoreError = false) {
     return true;
   } catch (err) {
     if (!ignoreError) {
-      console.error(`❌ Command failed: ${cmd}`);
+      console.error(`❌ Lỗi thực thi lệnh: ${cmd}`);
       throw err;
     }
     return false;
@@ -50,45 +50,64 @@ function runCommand(cmd, ignoreError = false) {
 }
 
 async function main() {
-  console.log('--------------------------------------------------');
-  console.log('🚀 Bắt đầu quá trình Build & Tag Version Mới');
-  console.log('--------------------------------------------------');
+  console.log('==================================================');
+  console.log('🚀 Bắt Đầu Tiến Trình Build & Release Git Tag SDK');
+  console.log('==================================================');
 
-  // 1. Chạy Build dự án trước
-  console.log('\n📦 Step 1: Executing npm run build...');
+  // 1. Kiểm tra mã nguồn & Build dự án
+  console.log('\n🔍 Step 1: Typecheck & Building distribution...');
+  runCommand('npm run typecheck');
   runCommand('npm run build');
 
-  // 2. Đọc package.json & tăng version
-  console.log('\n🔢 Step 2: Auto-incrementing version (0-9 rollover rule)...');
+  // 2. Đọc package.json & tăng version (hoặc nhận version từ CLI argument)
+  console.log('\n🔢 Step 2: Cập nhật version trong package.json...');
   const pkgStr = fs.readFileSync(packageJsonPath, 'utf-8');
   const pkg = JSON.parse(pkgStr);
 
   const oldVersion = pkg.version || '0.0.0';
-  const newVersion = bumpVersion(oldVersion);
+  const customVersion = process.argv[2]; // Nhận version thủ công nếu có: node scripts/build-and-tag.js 0.2.0
+  const newVersion = customVersion || bumpVersion(oldVersion);
 
   pkg.version = newVersion;
-  fs.writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf-8');
-  console.log(`✅ Version updated in package.json: ${oldVersion} -> ${newVersion}`);
+  fs.writeFileSync(
+    packageJsonPath,
+    `${JSON.stringify(pkg, null, 2)}\n`,
+    'utf-8'
+  );
+  console.log(`✅ Version: ${oldVersion} ➔ ${newVersion}`);
 
-  // 3. Git Add, Commit, Tag & Push
-  console.log('\n🏷️ Step 3: Git Commit, Tag & Push to GitHub...');
+  // 3. Git Stage, Commit, Tag & Push
+  console.log('\n🏷️ Step 3: Git Staging dist, Commit, Tag & Push...');
   try {
-    runCommand('git add .');
+    // Stage toàn bộ thay đổi bao gồm cả thư mục dist/ đã build
+    runCommand('git add -A');
     runCommand(`git commit -m "chore(release): v${newVersion}"`, true);
-    runCommand(`git tag v${newVersion}`);
-    runCommand('git push');
-    runCommand(`git push origin v${newVersion}`);
 
-    console.log('--------------------------------------------------');
-    console.log(`🎉 Thành công! Đã build, tag & đẩy v${newVersion} lên GitHub!`);
-    console.log('--------------------------------------------------');
+    // Tạo Git Tag an toàn (force tag nếu tag đã tồn tại cục bộ)
+    runCommand(`git tag -f v${newVersion}`);
+
+    // Push code và Push Tag lên GitHub
+    runCommand('git push origin HEAD');
+    runCommand(`git push origin v${newVersion} --force`);
+
+    console.log('\n==================================================');
+    console.log(
+      `🎉 THÀNH CÔNG! Đã phát hành SDK phiên bản v${newVersion} lên GitHub!`
+    );
+    console.log(
+      `📌 Đường dẫn cài đặt dự án con:\n   "dependencies": {\n     "@ladosite/grpc-sdk": "git+https://github.com/oh2k1vn/ladosite-grpc-sdk.git#v${newVersion}"\n   }`
+    );
+    console.log('==================================================');
   } catch (gitErr) {
-    console.warn('\n⚠️ Cảnh báo Git Tag/Push: Kiểm tra kết nối hoặc quyền push repository.');
-    console.log(`✅ Đã hoàn tất cập nhật package.json sang version ${newVersion}`);
+    console.warn(
+      '\n⚠️ Cảnh báo Git Push: Vui lòng kiểm tra quyền truy cập repository hoặc kết nối mạng.'
+    );
+    console.log(`✅ Đã cập nhật xong package.json lên version ${newVersion}`);
   }
 }
 
 main().catch((err) => {
-  console.error('\n❌ Lỗi tiến trình Build & Tag Version:', err.message);
+  console.error('\n❌ Thất bại tiến trình Release:', err.message);
   process.exit(1);
 });
+

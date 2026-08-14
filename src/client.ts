@@ -1,6 +1,7 @@
-import * as crypto from 'node:crypto';
 import { GrpcWebFetchTransport } from '@protobuf-ts/grpcweb-transport';
-import { RpcError } from '@protobuf-ts/runtime-rpc';
+import { RpcError, UnaryCall, type RpcMetadata } from '@protobuf-ts/runtime-rpc';
+
+export { RpcError };
 
 // Import raw service clients
 import { AuthServiceClient } from './generated/Protos/auth.client';
@@ -27,7 +28,7 @@ import {
 } from './generated/wrapped-clients';
 
 const DEFAULT_PUBLIC_KEY =
-  process.env.OPTIFLOW_PUBLIC_KEY ||
+  (typeof process !== 'undefined' && process.env.OPTIFLOW_PUBLIC_KEY) ||
   `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnYmTJKkxl/Yg3gA6SQ91foY5CB50LDXcYrq6Ukx8obTuSuH0RAcg/oSem+gT5G1aakdQqtCkYXSHS9wS8kLK3O4AXFCONED4I8tJ8GKRcxFvytxHTIMmqqa+gw+pbPpmV4Zr+KjLHZsLse0jFIJ+gZ2hR3CrAeJ8Au+3uKySNNZ0F2laJAPso9p/80d4nKhf6N/t3/AU2LirnvWyADQeoaXVRQAv3LVpe6IG+bgijg6Cu4rA1kOUxFSj7nD6n1+QZqS7Fu2WdwFd7DbAr1RQKzpxqwF2p7LTifDUUGLrGF45oslxytwbHyEc36eRx1g9mQIdipkIa1KXdjf51sE2jwIDAQAB
 -----END PUBLIC KEY-----`;
@@ -47,6 +48,25 @@ const DEFAULT_USER_AGENT =
 
 let cachedChecksum: string | null = null;
 
+/**
+ * Safely loads Node.js crypto module only when running in Node.js environment
+ * to prevent bundler errors and runtime crashes in browser environments.
+ */
+function getNodeCrypto(): typeof import('node:crypto') | null {
+  if (typeof window !== 'undefined') {
+    return null;
+  }
+  try {
+    const req = typeof eval !== 'undefined' ? eval('require') : null;
+    if (typeof req === 'function') {
+      return req('crypto');
+    }
+  } catch {
+    // Ignore error in non-Node environments
+  }
+  return null;
+}
+
 function generateChecksum(
   publicKey: string = DEFAULT_PUBLIC_KEY,
   values: string = 'web:optiflow_svc'
@@ -59,14 +79,19 @@ function generateChecksum(
     return cachedChecksum;
   }
   try {
-    const md5Hash = crypto.createHash('md5').update(values).digest('hex');
+    const nodeCrypto = getNodeCrypto();
+    if (!nodeCrypto || typeof nodeCrypto.publicEncrypt !== 'function') {
+      return '';
+    }
+
+    const md5Hash = nodeCrypto.createHash('md5').update(values).digest('hex');
     const padding = 'xxxxx';
     const rawPayload = padding + md5Hash + padding;
 
-    const encryptedBuffer = crypto.publicEncrypt(
+    const encryptedBuffer = nodeCrypto.publicEncrypt(
       {
         key: publicKey,
-        padding: crypto.constants.RSA_PKCS1_PADDING,
+        padding: nodeCrypto.constants.RSA_PKCS1_PADDING,
       },
       Buffer.from(rawPayload)
     );
@@ -91,7 +116,7 @@ export interface GrpcSDKConfig {
   userAgent?: string;
   publicKey?: string;
   debug?: boolean;
-  token?: string | (() => string | null | undefined);
+  token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
 }
 
 // Legacy type alias for backward-compatibility
@@ -101,7 +126,7 @@ export class OptiFlowGrpcSDK {
   private readonly transport: GrpcWebFetchTransport;
   private config: GrpcSDKConfig;
   private token: string | null = null;
-  private tokenGetter?: () => string | null | undefined;
+  private tokenGetter?: () => string | null | undefined | Promise<string | null | undefined>;
 
   // Fully statically-typed API service clients
   public readonly auth: WrappedAuthServiceClient;
@@ -132,105 +157,125 @@ export class OptiFlowGrpcSDK {
       interceptors: [
         {
           interceptUnary(next, method, input, options) {
-            options.meta = self.getRequestMetadata(options.meta as Record<string, string>);
-
             const isBrowser = typeof window !== 'undefined';
 
-            if (isDebug) {
-              if (isBrowser) {
-                console.groupCollapsed(
-                  `%c[gRPC REQ] ${method.service.typeName}/${method.name}`,
-                  'color: #2563eb; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dbeafe;'
-                );
-                console.log('Payload:', input);
-                console.log('Headers/Metadata:', options.meta);
-                console.groupEnd();
-              } else {
-                console.log(
-                  `[gRPC REQ] ${method.service.typeName}/${method.name}`,
-                  input
-                );
-              }
-            }
+            const callPromise = (async () => {
+              const meta = await self.getRequestMetadataAsync(
+                options.meta as Record<string, string>
+              );
+              options.meta = meta;
 
-            const call = next(method, input, options);
-
-            call.response.then(
-              (res) => {
-                if (isDebug) {
-                  if (isBrowser) {
-                    console.groupCollapsed(
-                      `%c[gRPC RES] ${method.service.typeName}/${method.name}`,
-                      'color: #16a34a; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dcfce7;'
-                    );
-                    console.log('Response:', res);
-                    console.groupEnd();
-                  } else {
-                    console.log(
-                      `[gRPC RES] ${method.service.typeName}/${method.name}`,
-                      res
-                    );
-                  }
+              if (isDebug) {
+                if (isBrowser) {
+                  console.groupCollapsed(
+                    `%c[gRPC REQ] ${method.service.typeName}/${method.name}`,
+                    'color: #2563eb; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dbeafe;'
+                  );
+                  console.log('Payload:', input);
+                  console.log('Headers/Metadata:', options.meta);
+                  console.groupEnd();
+                } else {
+                  console.log(
+                    `[gRPC REQ] ${method.service.typeName}/${method.name}`,
+                    input
+                  );
                 }
-              },
-              (err) => {
-                if (isDebug) {
-                  const isHalted =
-                    err instanceof RpcError &&
-                    (err.message.toLowerCase().includes('halted') ||
-                      err.code === 'UNAVAILABLE' ||
-                      (err.meta &&
-                        Object.values(err.meta).some(
-                          (val) =>
-                            typeof val === 'string' &&
-                            val.toLowerCase().includes('halted')
-                        )));
+              }
 
-                  if (isBrowser) {
-                    console.group(
-                      `%c[gRPC ERR] ${method.service.typeName}/${method.name}`,
-                      'color: #dc2626; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #fee2e2;'
-                    );
-                    if (err instanceof RpcError) {
-                      console.error('Error Code:', err.code);
-                      console.error('Error Message:', err.message);
-                      console.error('Metadata:', err.meta);
+              const call = next(method, input, options);
+
+              call.response.then(
+                (res) => {
+                  if (isDebug) {
+                    if (isBrowser) {
+                      console.groupCollapsed(
+                        `%c[gRPC RES] ${method.service.typeName}/${method.name}`,
+                        'color: #16a34a; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dcfce7;'
+                      );
+                      console.log('Response:', res);
+                      console.groupEnd();
                     } else {
-                      console.error(err);
-                    }
-                    console.groupEnd();
-                  } else {
-                    if (err instanceof RpcError) {
-                      if (isHalted) {
-                        console.error(
-                          `🔴 [gRPC HALTED ERROR] ${method.service.typeName}/${method.name}\n` +
-                          `Code: ${err.code}\n` +
-                          `Message: ${err.message}\n` +
-                          `Meta:`,
-                          err.meta
-                        );
-                      } else {
-                        console.error(
-                          `[gRPC ERR] ${method.service.typeName}/${method.name}`,
-                          {
-                            code: err.code,
-                            message: err.message,
-                            meta: err.meta,
-                          }
-                        );
-                      }
-                    } else {
-                      console.error(
-                        `[gRPC ERR] ${method.service.typeName}/${method.name}`,
-                        err
+                      console.log(
+                        `[gRPC RES] ${method.service.typeName}/${method.name}`,
+                        res
                       );
                     }
                   }
-                }
-              }
-            );
+                },
+                (err) => {
+                  if (isDebug) {
+                    const isHalted =
+                      err instanceof RpcError &&
+                      (err.message.toLowerCase().includes('halted') ||
+                        err.code === 'UNAVAILABLE' ||
+                        (err.meta &&
+                          Object.values(err.meta).some(
+                            (val) =>
+                              typeof val === 'string' &&
+                              val.toLowerCase().includes('halted')
+                          )));
 
-            return call;
+                    if (isBrowser) {
+                      console.group(
+                        `%c[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                        'color: #dc2626; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #fee2e2;'
+                      );
+                      if (err instanceof RpcError) {
+                        console.error('Error Code:', err.code);
+                        console.error('Error Message:', err.message);
+                        console.error('Metadata:', err.meta);
+                      } else {
+                        console.error(err);
+                      }
+                      console.groupEnd();
+                    } else {
+                      if (err instanceof RpcError) {
+                        if (isHalted) {
+                          console.error(
+                            `🔴 [gRPC HALTED ERROR] ${method.service.typeName}/${method.name}\n` +
+                              `Code: ${err.code}\n` +
+                              `Message: ${err.message}\n` +
+                              `Meta:`,
+                            err.meta
+                          );
+                        } else {
+                          console.error(
+                            `[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                            {
+                              code: err.code,
+                              message: err.message,
+                              meta: err.meta,
+                            }
+                          );
+                        }
+                      } else {
+                        console.error(
+                          `[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                          err
+                        );
+                      }
+                    }
+                  }
+                }
+              );
+
+              return call;
+            })();
+
+            const headersPromise = callPromise.then((call) => call.headers);
+            const responsePromise = callPromise.then((call) => call.response);
+            const statusPromise = callPromise.then((call) => call.status);
+            const trailersPromise = callPromise.then((call) => call.trailers);
+
+            return new UnaryCall(
+              method,
+              (options.meta as RpcMetadata) || {},
+              input,
+              headersPromise,
+              responsePromise,
+              statusPromise,
+              trailersPromise
+            );
           },
         },
       ],
@@ -289,15 +334,19 @@ export class OptiFlowGrpcSDK {
    * Check whether an authentication token is currently available.
    * Returns true if a static token is set or a tokenGetter returns a truthy value.
    */
-  public hasToken(): boolean {
+  public hasToken(): boolean | Promise<boolean> {
     if (this.tokenGetter) {
-      return !!this.tokenGetter();
+      const res = this.tokenGetter();
+      if (res && typeof (res as Promise<unknown>).then === 'function') {
+        return (res as Promise<string | null | undefined>).then((val) => !!val);
+      }
+      return !!res;
     }
     return this.token !== null;
   }
 
   /**
-   * Returns the header/metadata configuration object generated for API requests.
+   * Returns the header/metadata configuration object generated for API requests (synchronously).
    * Maps to lines 134-143 configuration logic.
    */
   public getRequestMetadata(extraMeta?: Record<string, string>): Record<string, string> {
@@ -316,10 +365,31 @@ export class OptiFlowGrpcSDK {
     if (!meta.authorization && !meta.Authorization) {
       let activeToken = this.token;
       if (this.tokenGetter) {
-        activeToken = this.tokenGetter() || null;
+        const res = this.tokenGetter();
+        if (typeof res === 'string') {
+          activeToken = res;
+        } else if (res === null || res === undefined) {
+          activeToken = null;
+        }
       }
       if (activeToken) {
         meta.authorization = `Bearer ${activeToken}`;
+      }
+    }
+
+    return meta;
+  }
+
+  /**
+   * Returns the header/metadata configuration object asynchronously, resolving tokenGetter if it returns a Promise.
+   */
+  public async getRequestMetadataAsync(extraMeta?: Record<string, string>): Promise<Record<string, string>> {
+    const meta = this.getRequestMetadata(extraMeta);
+
+    if (!meta.authorization && !meta.Authorization && this.tokenGetter) {
+      const res = await this.tokenGetter();
+      if (typeof res === 'string' && res) {
+        meta.authorization = `Bearer ${res}`;
       }
     }
 
@@ -331,3 +401,4 @@ export class OptiFlowGrpcSDK {
  * Helper factory function to instantiate the OptiFlow gRPC SDK without using 'new'
  */
 export const grpcSDK = (config: GrpcSDKConfig) => new OptiFlowGrpcSDK(config);
+

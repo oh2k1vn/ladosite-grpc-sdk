@@ -43,6 +43,18 @@ export interface FetchSeoDataResult {
   metadata: Metadata;
 }
 
+let cachedGlobalData: SeoGlobalConfigData | undefined = undefined;
+let globalDataCacheTimestamp = 0;
+const GLOBAL_SEO_CACHE_TTL = 10 * 60 * 1000; // 10 phút memory cache
+
+/**
+ * Xóa cache Global SEO trong bộ nhớ SDK
+ */
+export function clearGlobalSeoCache(): void {
+  cachedGlobalData = undefined;
+  globalDataCacheTimestamp = 0;
+}
+
 /**
  * Hàm helper tự động fetch SEO từ gRPC API và trả về Next.js Metadata chuẩn.
  * Tự động bọc try-catch an toàn (Zero Crash) - Không làm sập ứng dụng khi gRPC API gặp sự cố.
@@ -56,6 +68,7 @@ export async function fetchSeoMetadata(
 
 /**
  * Tự động hóa fetch đầy đủ dữ liệu SEO (Global + Page + Metadata) từ gRPC SDK.
+ * Có sẵn bộ nhớ cache (TTL 10 phút) cho Global SEO để giảm tải gRPC request.
  * Bọc try-catch tuyệt đối an toàn, chạy bất đồng bộ song song (Promise.allSettled) để tối ưu tốc độ.
  */
 export async function fetchSeoData(
@@ -77,23 +90,36 @@ export async function fetchSeoData(
   if (seoClient) {
     const promises: Promise<void>[] = [];
 
-    // 1. Tự động fetch Global SEO song song nếu chưa có
+    // 1. Tự động fetch Global SEO song song nếu chưa có (Có kiểm tra TTL Memory Cache)
     if (!globalData) {
-      promises.push(
-        seoClient
-          .getGlobalConfig({})
-          .then((res) => {
-            if (res?.success && res.data) {
-              globalData = res.data;
-            }
-          })
-          .catch((err) => {
-            console.warn(
-              '[OptiFlow SDK] GetGlobalConfig SEO failed safely:',
-              err
-            );
-          })
-      );
+      const isCacheValid =
+        cachedGlobalData &&
+        Date.now() - globalDataCacheTimestamp < GLOBAL_SEO_CACHE_TTL;
+
+      if (isCacheValid) {
+        globalData = cachedGlobalData;
+      } else {
+        promises.push(
+          seoClient
+            .getGlobalConfig({})
+            .then((res) => {
+              if (res?.success && res.data) {
+                globalData = res.data;
+                cachedGlobalData = res.data;
+                globalDataCacheTimestamp = Date.now();
+              }
+            })
+            .catch((err) => {
+              console.warn(
+                '[OptiFlow SDK] GetGlobalConfig SEO failed safely:',
+                err
+              );
+              if (cachedGlobalData) {
+                globalData = cachedGlobalData;
+              }
+            })
+        );
+      }
     }
 
     // 2. Tự động fetch Page SEO song song bằng URL nếu chưa có
