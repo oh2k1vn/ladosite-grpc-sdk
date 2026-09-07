@@ -268,6 +268,10 @@ export interface FetchRobotsOptions {
    */
   global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
   /**
+   * Đường dẫn URL đầy đủ (tùy chọn).
+   */
+  url?: string;
+  /**
    * Tùy chọn truyền Domain chính thức để override.
    */
   domain?: string;
@@ -289,11 +293,11 @@ export async function fetchRobotsTxt(
       ? options.global.data
       : (options.global as SeoGlobalConfigData | undefined);
 
-  const { sdk, request } = options;
+  const { sdk, request, url } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
   let { originDomain } = resolvePublicUrl(
-    undefined,
+    url,
     request,
     options.domain || globalData?.domain
   );
@@ -364,6 +368,100 @@ export async function handleRobotsTxtRequest(
     },
   });
 }
+
+export interface FetchSitemapOptions {
+  /**
+   * Instance của OptiFlowGrpcSDK.
+   */
+  sdk?: OptiFlowGrpcSDK;
+  /**
+   * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
+   */
+  seoClient?: WrappedSeoServiceClient;
+  /**
+   * Đường dẫn URL đầy đủ (ví dụ: "https://optiflow.vn/sitemap.xml" hoặc "/sitemap.xml").
+   */
+  url?: string;
+  /**
+   * Tùy chọn truyền Domain chính thức để override.
+   */
+  domain?: string;
+  /**
+   * Request object trong Route Handler của Next.js (nếu có).
+   */
+  request?: Request;
+}
+
+/**
+ * Fetch XML Sitemap từ gRPC SEO Service với cơ chế try-catch an toàn tuyệt đối.
+ * Trả về chuỗi XML sitemap thô (hoặc chuỗi rỗng nếu không tìm thấy / lỗi).
+ */
+export async function fetchSitemapXml(
+  options: FetchSitemapOptions = {}
+): Promise<string> {
+  const { sdk, request, url } = options;
+  const seoClient = options.seoClient || sdk?.seo;
+
+  const { targetUrl } = resolvePublicUrl(url, request, options.domain);
+
+  if (!seoClient) {
+    return '';
+  }
+
+  try {
+    const res = await seoClient.getSitemapData({ url: targetUrl });
+    if (res?.success && res.xmlContent) {
+      return res.xmlContent;
+    }
+    return res?.xmlContent || '';
+  } catch (err: unknown) {
+    console.warn('[OptiFlow SDK] GetSitemapData failed safely:', err);
+    return '';
+  }
+}
+
+/**
+ * Alias tên ngắn gọn cho `fetchSitemapXml`.
+ */
+export const fetchSitemap = fetchSitemapXml;
+
+/**
+ * Helper tạo Web Standard Response (chuẩn application/xml) cho Next.js Route Handler (`app/sitemap.xml/route.ts`).
+ */
+export async function handleSitemapRequest(
+  optionsOrRequest?: FetchSitemapOptions | Request,
+  extraOptions?: FetchSitemapOptions
+): Promise<Response> {
+  let options: FetchSitemapOptions = {};
+
+  if (optionsOrRequest instanceof Request) {
+    options = { request: optionsOrRequest, ...extraOptions };
+  } else if (
+    optionsOrRequest &&
+    typeof (optionsOrRequest as Request).url === 'string' &&
+    !(optionsOrRequest as FetchSitemapOptions).sdk &&
+    !(optionsOrRequest as FetchSitemapOptions).seoClient &&
+    !(optionsOrRequest as FetchSitemapOptions).request
+  ) {
+    options = { request: optionsOrRequest as Request, ...extraOptions };
+  } else if (optionsOrRequest) {
+    options = { ...(optionsOrRequest as FetchSitemapOptions), ...extraOptions };
+  }
+
+  const xmlContent = await fetchSitemapXml(options);
+  if (!xmlContent) {
+    return new Response('Sitemap Not Found', { status: 404 });
+  }
+
+  return new Response(xmlContent, {
+    headers: {
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control':
+        'public, max-age=3600, s-maxage=14400, stale-while-revalidate=86400',
+    },
+  });
+}
+
 
 
 

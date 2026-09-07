@@ -3470,6 +3470,10 @@ interface FetchRobotsOptions {
      */
     global?: SeoGlobalConfigResponse | SeoGlobalConfigData;
     /**
+     * Đường dẫn URL đầy đủ (tùy chọn).
+     */
+    url?: string;
+    /**
      * Tùy chọn truyền Domain chính thức để override.
      */
     domain?: string;
@@ -3488,6 +3492,41 @@ declare function fetchRobotsTxt(options?: FetchRobotsOptions): Promise<string>;
  * Hỗ trợ nhận trực tiếp Request object hoặc FetchRobotsOptions object.
  */
 declare function handleRobotsTxtRequest(optionsOrRequest?: FetchRobotsOptions | Request, extraOptions?: FetchRobotsOptions): Promise<Response>;
+interface FetchSitemapOptions {
+    /**
+     * Instance của OptiFlowGrpcSDK.
+     */
+    sdk?: OptiFlowGrpcSDK;
+    /**
+     * Instance của WrappedSeoServiceClient (ví dụ: sdk.seo).
+     */
+    seoClient?: WrappedSeoServiceClient;
+    /**
+     * Đường dẫn URL đầy đủ (ví dụ: "https://optiflow.vn/sitemap.xml" hoặc "/sitemap.xml").
+     */
+    url?: string;
+    /**
+     * Tùy chọn truyền Domain chính thức để override.
+     */
+    domain?: string;
+    /**
+     * Request object trong Route Handler của Next.js (nếu có).
+     */
+    request?: Request;
+}
+/**
+ * Fetch XML Sitemap từ gRPC SEO Service với cơ chế try-catch an toàn tuyệt đối.
+ * Trả về chuỗi XML sitemap thô (hoặc chuỗi rỗng nếu không tìm thấy / lỗi).
+ */
+declare function fetchSitemapXml(options?: FetchSitemapOptions): Promise<string>;
+/**
+ * Alias tên ngắn gọn cho `fetchSitemapXml`.
+ */
+declare const fetchSitemap: typeof fetchSitemapXml;
+/**
+ * Helper tạo Web Standard Response (chuẩn application/xml) cho Next.js Route Handler (`app/sitemap.xml/route.ts`).
+ */
+declare function handleSitemapRequest(optionsOrRequest?: FetchSitemapOptions | Request, extraOptions?: FetchSitemapOptions): Promise<Response>;
 
 interface SitemapFetcherParams {
     url: string;
@@ -3547,4 +3586,4 @@ interface SeoScriptsProps {
 }
 declare function SeoScripts(props: SeoScriptsProps): React.JSX.Element | null;
 
-export { AuthService, AuthServiceClient, BlogDataSourceResponse, BlogGroupDataSourceResponse, BlogGroupResponse, BlogGroupResponseWrapped, BlogResponse, BlogResponseWrapped, BlogService, BlogServiceClient, CancelOrderRequest, CommentData, CommentService, CommentServiceClient, CommonCriteria, CommonDataSourceMeta, CommonQuery, CommonSort, CreateCommentRequest, CreateCommentResponse, type Criteria, type CriteriaType, Empty, type FetchRobotsOptions, type FetchSeoDataResult, type FetchSeoOptions, GetBySlugPagedRequest, GetBySlugRequest, GetCommentsByRefRequest, GetCommentsByRefResponse, GetMetaByUrlRequest, GetOrderRequest, GetOrderTrackingResponse, GetOrdersResponse, GetPageViewRequest, GetSitemapDataRequest, type GrpcSDKConfig, type HandleSitemapOptions, type IAuthServiceClient, type IBlogServiceClient, type ICommentServiceClient, type IOrderServiceClient, type IPageViewServiceClient, type IProductServiceClient, type ISeoServiceClient, type ITrackingServiceClient, type IUserSubmitServiceClient, IdRequest, LoginData, LoginRequest, LoginResponse, OperationResult, OptiFlowGrpcSDK, OrderDetailResponse, OrderItemInput, OrderItemResponse, OrderResponse, OrderService, OrderServiceClient, PageRequest, PageResponse, PageViewData, PageViewResponse, PageViewService, PageViewServiceClient, PlaceOrderRequest, ProductDataSourceResponse, ProductGroupDataSourceResponse, ProductGroupResponse, ProductGroupResponseWrapped, ProductResponse, ProductResponseWrapped, ProductService, ProductServiceClient, ProductVariantConfigResponse, ProductVariantResponse, type Query, RequestRefundRequest, SeoAddressData, SeoContactPointData, SeoGlobalConfigData, SeoGlobalConfigResponse, SeoLogoData, SeoOpenGraphData, type SeoOptions, SeoPageConfigData, SeoPageConfigResponse, SeoRobotsMetaData, SeoScripts, SeoScriptsData, type SeoScriptsProps, SeoService, SeoServiceClient, SeoSitemapConfigData, SitemapDataResponse, type SitemapFetcherParams, type SitemapFetcherResult, type Sort, StringValue, SubmitRequest, SubmitResponse, SubmitReviewRequest, TrackingEvent, TrackingService, TrackingServiceClient, UserAccount, UserEventRequest, UserSubmitService, UserSubmitServiceClient, WrappedAuthServiceClient, WrappedBlogServiceClient, type WrappedClient, WrappedCommentServiceClient, WrappedOrderServiceClient, WrappedPageViewServiceClient, WrappedProductServiceClient, WrappedSeoServiceClient, WrappedTrackingServiceClient, WrappedUserSubmitServiceClient, clearGlobalSeoCache, extractPublicUrl, fetchRobotsTxt, fetchSeoData, fetchSeoMetadata, generateMetadata, grpcSDK, handleDynamicSitemap, handleRobotsTxtRequest, resolvePublicUrl };
+export { AuthService, AuthServiceClient, BlogDataSourceResponse, BlogGroupDataSourceResponse, BlogGroupResponse, BlogGroupResponseWrapped, BlogResponse, BlogResponseWrapped, BlogService, BlogServiceClient, CancelOrderRequest, CommentData, CommentService, CommentServiceClient, CommonCriteria, CommonDataSourceMeta, CommonQuery, CommonSort, CreateCommentRequest, CreateCommentResponse, type Criteria, type CriteriaType, Empty, type FetchRobotsOptions, type FetchSeoDataResult, type FetchSeoOptions, type FetchSitemapOptions, GetBySlugPagedRequest, GetBySlugRequest, GetCommentsByRefRequest, GetCommentsByRefResponse, GetMetaByUrlRequest, GetOrderRequest, GetOrderTrackingResponse, GetOrdersResponse, GetPageViewRequest, GetSitemapDataRequest, type GrpcSDKConfig, type HandleSitemapOptions, type IAuthServiceClient, type IBlogServiceClient, type ICommentServiceClient, type IOrderServiceClient, type IPageViewServiceClient, type IProductServiceClient, type ISeoServiceClient, type ITrackingServiceClient, type IUserSubmitServiceClient, IdRequest, LoginData, LoginRequest, LoginResponse, OperationResult, OptiFlowGrpcSDK, OrderDetailResponse, OrderItemInput, OrderItemResponse, OrderResponse, OrderService, OrderServiceClient, PageRequest, PageResponse, PageViewData, PageViewResponse, PageViewService, PageViewServiceClient, PlaceOrderRequest, ProductDataSourceResponse, ProductGroupDataSourceResponse, ProductGroupResponse, ProductGroupResponseWrapped, ProductResponse, ProductResponseWrapped, ProductService, ProductServiceClient, ProductVariantConfigResponse, ProductVariantResponse, type Query, RequestRefundRequest, SeoAddressData, SeoContactPointData, SeoGlobalConfigData, SeoGlobalConfigResponse, SeoLogoData, SeoOpenGraphData, type SeoOptions, SeoPageConfigData, SeoPageConfigResponse, SeoRobotsMetaData, SeoScripts, SeoScriptsData, type SeoScriptsProps, SeoService, SeoServiceClient, SeoSitemapConfigData, SitemapDataResponse, type SitemapFetcherParams, type SitemapFetcherResult, type Sort, StringValue, SubmitRequest, SubmitResponse, SubmitReviewRequest, TrackingEvent, TrackingService, TrackingServiceClient, UserAccount, UserEventRequest, UserSubmitService, UserSubmitServiceClient, WrappedAuthServiceClient, WrappedBlogServiceClient, type WrappedClient, WrappedCommentServiceClient, WrappedOrderServiceClient, WrappedPageViewServiceClient, WrappedProductServiceClient, WrappedSeoServiceClient, WrappedTrackingServiceClient, WrappedUserSubmitServiceClient, clearGlobalSeoCache, extractPublicUrl, fetchRobotsTxt, fetchSeoData, fetchSeoMetadata, fetchSitemap, fetchSitemapXml, generateMetadata, grpcSDK, handleDynamicSitemap, handleRobotsTxtRequest, handleSitemapRequest, resolvePublicUrl };
