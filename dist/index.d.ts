@@ -3316,6 +3316,70 @@ declare class WrappedUserSubmitServiceClient {
     submit(input: Parameters<UserSubmitServiceClient['submit']>[0], options?: Parameters<UserSubmitServiceClient['submit']>[1]): Promise<UnwrapUnaryCall<UserSubmitServiceClient['submit']>>;
 }
 
+type LogLevel = 'info' | 'warn' | 'error';
+interface GLogConfig {
+    /**
+     * Endpoint API tiếp nhận log (mặc định: '/api/web/ClientLog/Ingest')
+     */
+    apiLogUrl?: string;
+    /**
+     * Secret key đính kèm qua header X-OptiFlow-Secret (mặc định: 'optiflow_secret')
+     */
+    secretHeader?: string;
+    /**
+     * Cho phép in ra console (mặc định: true)
+     */
+    enableConsole?: boolean;
+    /**
+     * Cho phép gửi log lên remote server (mặc định: true)
+     */
+    enableRemote?: boolean;
+    /**
+     * Custom fetch function nếu muốn dùng custom fetcher
+     */
+    customFetch?: typeof fetch;
+}
+/**
+ * Cấu hình tùy chỉnh cho module Google Cloud Logger
+ */
+declare function configureGLog(options: Partial<GLogConfig>): void;
+/**
+ * Chuẩn hóa mọi input (object, error, string) thành đúng 1 dòng string duy nhất (xóa \r \n)
+ */
+declare function formatSingleLine(message: unknown): string;
+/**
+ * Gửi log 1 dòng về Backend Ingest -> Google Cloud Logging
+ */
+declare function sendLog(level: LogLevel, message: unknown, extra?: {
+    url?: string;
+    payload?: unknown;
+}): void;
+/**
+ * Module Logger tiêu chuẩn Google Cloud cho Frontend & SDK
+ */
+declare const glog: {
+    info: (msg: unknown, extra?: {
+        url?: string;
+        payload?: unknown;
+    }) => void;
+    warn: (msg: unknown, extra?: {
+        url?: string;
+        payload?: unknown;
+    }) => void;
+    error: (msg: unknown, extra?: {
+        url?: string;
+        payload?: unknown;
+    }) => void;
+};
+/**
+ * Helper xử lý tập trung tất cả status code của gRPC chuẩn
+ */
+declare function handleGrpcError(methodName: string, err: unknown, extraMeta?: Record<string, unknown>): void;
+/**
+ * Tiện ích tự động log mọi cuộc gọi gRPC: đo latency, phát hiện response null/empty, log success & error
+ */
+declare function withGrpcLogging<T>(methodName: string, apiCallPromise: Promise<T>, payload?: Record<string, unknown>): Promise<T>;
+
 interface GrpcSDKConfig {
     baseUrl?: string;
     orgId: string;
@@ -3325,6 +3389,10 @@ interface GrpcSDKConfig {
     userAgent?: string;
     publicKey?: string;
     token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
+    /**
+     * Cấu hình Google Cloud Logger cho SDK (hoặc boolean bật/tắt)
+     */
+    logging?: GLogConfig | boolean;
 }
 type WrappedClient<T, _M = Record<string, unknown>> = T;
 declare class OptiFlowGrpcSDK {
@@ -3426,6 +3494,18 @@ interface FetchSeoOptions {
      * Tiêu đề dự phòng khi API SEO lỗi hoặc chưa có dữ liệu.
      */
     fallbackTitle?: string;
+    /**
+     * Tùy chọn truyền Domain chính thức để override và chuẩn hóa Canonical URL.
+     */
+    domain?: string;
+    /**
+     * Tùy chọn Next.js Metadata để override thủ công các trường cụ thể.
+     */
+    overrides?: Partial<Metadata>;
+    /**
+     * Request object trong Server Component / Route Handler của Next.js (nếu có).
+     */
+    request?: Request;
 }
 interface FetchSeoDataResult {
     global?: SeoGlobalConfigData;
@@ -3443,7 +3523,7 @@ declare function clearGlobalSeoCache(): void;
 declare function fetchSeoMetadata(options?: FetchSeoOptions): Promise<Metadata>;
 /**
  * Tự động hóa fetch đầy đủ dữ liệu SEO (Global + Page + Metadata) từ gRPC SDK.
- * Có sẵn bộ nhớ cache (TTL 10 phút) cho Global SEO để giảm tải gRPC request.
+ * Có sẵn bộ nhớ cache (TTL 1 phút) cho Global SEO để giảm tải gRPC request.
  * Bọc try-catch tuyệt đối an toàn, chạy bất đồng bộ song song (Promise.allSettled) để tối ưu tốc độ.
  */
 declare function fetchSeoData(options?: FetchSeoOptions): Promise<FetchSeoDataResult>;
@@ -3585,4 +3665,4 @@ interface SeoScriptsProps {
 }
 declare function SeoScripts(props: SeoScriptsProps): React.JSX.Element | null;
 
-export { AuthService, AuthServiceClient, BlogDataSourceResponse, BlogGroupDataSourceResponse, BlogGroupResponse, BlogGroupResponseWrapped, BlogResponse, BlogResponseWrapped, BlogService, BlogServiceClient, CancelOrderRequest, CommentData, CommentService, CommentServiceClient, CommonCriteria, CommonDataSourceMeta, CommonQuery, CommonSort, CreateCommentRequest, CreateCommentResponse, type Criteria, type CriteriaType, Empty, type FetchRobotsOptions, type FetchSeoDataResult, type FetchSeoOptions, type FetchSitemapOptions, GetBySlugPagedRequest, GetBySlugRequest, GetCommentsByRefRequest, GetCommentsByRefResponse, GetMetaByUrlRequest, GetOrderRequest, GetOrderTrackingResponse, GetOrdersResponse, GetPageViewRequest, GetSitemapDataRequest, type GrpcSDKConfig, type HandleSitemapOptions, type IAuthServiceClient, type IBlogServiceClient, type ICommentServiceClient, type IOrderServiceClient, type IPageViewServiceClient, type IProductServiceClient, type ISeoServiceClient, type ITrackingServiceClient, type IUserSubmitServiceClient, IdRequest, LoginData, LoginRequest, LoginResponse, OperationResult, OptiFlowGrpcSDK, OrderDetailResponse, OrderItemInput, OrderItemResponse, OrderResponse, OrderService, OrderServiceClient, PageRequest, PageResponse, PageViewData, PageViewResponse, PageViewService, PageViewServiceClient, PlaceOrderRequest, ProductDataSourceResponse, ProductGroupDataSourceResponse, ProductGroupResponse, ProductGroupResponseWrapped, ProductResponse, ProductResponseWrapped, ProductService, ProductServiceClient, ProductVariantConfigResponse, ProductVariantResponse, type Query, RequestRefundRequest, SeoAddressData, SeoContactPointData, SeoGlobalConfigData, SeoGlobalConfigResponse, SeoLogoData, SeoOpenGraphData, type SeoOptions, SeoPageConfigData, SeoPageConfigResponse, SeoRobotsMetaData, SeoScripts, SeoScriptsData, type SeoScriptsProps, SeoService, SeoServiceClient, SeoSitemapConfigData, SitemapDataResponse, type SitemapFetcherParams, type SitemapFetcherResult, type Sort, StringValue, SubmitRequest, SubmitResponse, SubmitReviewRequest, TrackingEvent, TrackingService, TrackingServiceClient, UserAccount, UserEventRequest, UserSubmitService, UserSubmitServiceClient, WrappedAuthServiceClient, WrappedBlogServiceClient, type WrappedClient, WrappedCommentServiceClient, WrappedOrderServiceClient, WrappedPageViewServiceClient, WrappedProductServiceClient, WrappedSeoServiceClient, WrappedTrackingServiceClient, WrappedUserSubmitServiceClient, clearGlobalSeoCache, extractPublicUrl, fetchRobotsTxt, fetchSeoData, fetchSeoMetadata, fetchSitemap, fetchSitemapXml, generateMetadata, grpcSDK, handleDynamicSitemap, handleRobotsTxtRequest, handleSitemapRequest, resolvePublicUrl };
+export { AuthService, AuthServiceClient, BlogDataSourceResponse, BlogGroupDataSourceResponse, BlogGroupResponse, BlogGroupResponseWrapped, BlogResponse, BlogResponseWrapped, BlogService, BlogServiceClient, CancelOrderRequest, CommentData, CommentService, CommentServiceClient, CommonCriteria, CommonDataSourceMeta, CommonQuery, CommonSort, CreateCommentRequest, CreateCommentResponse, type Criteria, type CriteriaType, Empty, type FetchRobotsOptions, type FetchSeoDataResult, type FetchSeoOptions, type FetchSitemapOptions, type GLogConfig, GetBySlugPagedRequest, GetBySlugRequest, GetCommentsByRefRequest, GetCommentsByRefResponse, GetMetaByUrlRequest, GetOrderRequest, GetOrderTrackingResponse, GetOrdersResponse, GetPageViewRequest, GetSitemapDataRequest, type GrpcSDKConfig, type HandleSitemapOptions, type IAuthServiceClient, type IBlogServiceClient, type ICommentServiceClient, type IOrderServiceClient, type IPageViewServiceClient, type IProductServiceClient, type ISeoServiceClient, type ITrackingServiceClient, type IUserSubmitServiceClient, IdRequest, type LogLevel, LoginData, LoginRequest, LoginResponse, OperationResult, OptiFlowGrpcSDK, OrderDetailResponse, OrderItemInput, OrderItemResponse, OrderResponse, OrderService, OrderServiceClient, PageRequest, PageResponse, PageViewData, PageViewResponse, PageViewService, PageViewServiceClient, PlaceOrderRequest, ProductDataSourceResponse, ProductGroupDataSourceResponse, ProductGroupResponse, ProductGroupResponseWrapped, ProductResponse, ProductResponseWrapped, ProductService, ProductServiceClient, ProductVariantConfigResponse, ProductVariantResponse, type Query, RequestRefundRequest, SeoAddressData, SeoContactPointData, SeoGlobalConfigData, SeoGlobalConfigResponse, SeoLogoData, SeoOpenGraphData, type SeoOptions, SeoPageConfigData, SeoPageConfigResponse, SeoRobotsMetaData, SeoScripts, SeoScriptsData, type SeoScriptsProps, SeoService, SeoServiceClient, SeoSitemapConfigData, SitemapDataResponse, type SitemapFetcherParams, type SitemapFetcherResult, type Sort, StringValue, SubmitRequest, SubmitResponse, SubmitReviewRequest, TrackingEvent, TrackingService, TrackingServiceClient, UserAccount, UserEventRequest, UserSubmitService, UserSubmitServiceClient, WrappedAuthServiceClient, WrappedBlogServiceClient, type WrappedClient, WrappedCommentServiceClient, WrappedOrderServiceClient, WrappedPageViewServiceClient, WrappedProductServiceClient, WrappedSeoServiceClient, WrappedTrackingServiceClient, WrappedUserSubmitServiceClient, clearGlobalSeoCache, configureGLog, extractPublicUrl, fetchRobotsTxt, fetchSeoData, fetchSeoMetadata, fetchSitemap, fetchSitemapXml, formatSingleLine, generateMetadata, glog, grpcSDK, handleDynamicSitemap, handleGrpcError, handleRobotsTxtRequest, handleSitemapRequest, resolvePublicUrl, sendLog, withGrpcLogging };

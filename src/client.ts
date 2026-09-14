@@ -27,6 +27,14 @@ import {
   WrappedUserSubmitServiceClient,
 } from './generated/wrapped-clients';
 
+import {
+  glog,
+  handleGrpcError,
+  configureGLog,
+  formatSingleLine,
+  type GLogConfig,
+} from './logger';
+
 const DEFAULT_PUBLIC_KEY =
   (typeof process !== 'undefined' && process.env.OPTIFLOW_PUBLIC_KEY) ||
   `-----BEGIN PUBLIC KEY-----
@@ -102,112 +110,9 @@ function generateChecksum(
     }
     return result;
   } catch (error) {
-    console.error('[gRPC Client] Checksum generation failed:', error);
+    glog.error(`[gRPC Client] Checksum generation failed | Detail: ${formatSingleLine(error)}`);
     return '';
   }
-}
-
-const ANSI = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  blue: '\x1b[34m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  magenta: '\x1b[35m',
-  bgBlue: '\x1b[44m\x1b[97m\x1b[1m',
-  bgGreen: '\x1b[42m\x1b[30m\x1b[1m',
-  bgRed: '\x1b[41m\x1b[97m\x1b[1m',
-  bgYellow: '\x1b[43m\x1b[30m\x1b[1m',
-};
-
-function formatLogPayload(data: unknown): string {
-  if (data === undefined || data === null) {
-    return String(data);
-  }
-  try {
-    return JSON.stringify(
-      data,
-      (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
-      2
-    );
-  } catch {
-    return String(data);
-  }
-}
-
-function isDynamicDebugActive(meta?: Record<string, string>): boolean {
-  // 1. Browser check: URL Query Param (?debug=true hoặc ?debug=1)
-  if (typeof window !== 'undefined' && window.location) {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('debug') === 'true' || params.get('debug') === '1') {
-        return true;
-      }
-    } catch {
-      // Ignore error in non-standard browser/mock environments
-    }
-  }
-
-  // 2. Metadata / Header check (x-debug, debug, referer chứa ?debug=true)
-  if (meta) {
-    if (
-      meta['x-debug'] === 'true' ||
-      meta['x-debug'] === '1' ||
-      meta.debug === 'true' ||
-      meta.debug === '1'
-    ) {
-      return true;
-    }
-
-    const referer = meta.referer || meta.Referer;
-    if (
-      typeof referer === 'string' &&
-      (referer.includes('debug=true') || referer.includes('debug=1'))
-    ) {
-      return true;
-    }
-
-    const xUrl = meta['x-url'] || meta['x-forwarded-uri'] || meta['x-matched-path'];
-    if (
-      typeof xUrl === 'string' &&
-      (xUrl.includes('debug=true') || xUrl.includes('debug=1'))
-    ) {
-      return true;
-    }
-  }
-
-  // 3. Next.js Server check (tự động đọc referer/header từ context request nếu chạy trên Server)
-  if (typeof window === 'undefined') {
-    try {
-      const req = typeof eval !== 'undefined' ? eval('require') : null;
-      if (typeof req === 'function') {
-        const nextHeaders = req('next/headers');
-        if (nextHeaders && typeof nextHeaders.headers === 'function') {
-          const h = nextHeaders.headers();
-          if (h && typeof h.get === 'function') {
-            const referer = h.get('referer');
-            if (
-              referer &&
-              (referer.includes('debug=true') || referer.includes('debug=1'))
-            ) {
-              return true;
-            }
-            const xDebug = h.get('x-debug') || h.get('debug');
-            if (xDebug === 'true' || xDebug === '1') {
-              return true;
-            }
-          }
-        }
-      }
-    } catch {
-      // Bỏ qua nếu không chạy trong request context của Next.js
-    }
-  }
-
-  return false;
 }
 
 export interface GrpcSDKConfig {
@@ -219,6 +124,10 @@ export interface GrpcSDKConfig {
   userAgent?: string;
   publicKey?: string;
   token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
+  /**
+   * Cấu hình Google Cloud Logger cho SDK (hoặc boolean bật/tắt)
+   */
+  logging?: GLogConfig | boolean;
 }
 
 // Legacy type alias for backward-compatibility
@@ -245,6 +154,12 @@ export class OptiFlowGrpcSDK {
     this.config = config;
     const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
 
+    if (config.logging === false) {
+      configureGLog({ enableConsole: false, enableRemote: false });
+    } else if (typeof config.logging === 'object') {
+      configureGLog(config.logging);
+    }
+
     if (typeof config.token === 'function') {
       this.tokenGetter = config.token;
     } else if (typeof config.token === 'string') {
@@ -258,7 +173,6 @@ export class OptiFlowGrpcSDK {
       interceptors: [
         {
           interceptUnary(next, method, input, options) {
-            const isBrowser = typeof window !== 'undefined';
             const startTime = Date.now();
             const serviceMethod = `${method.service.typeName}/${method.name}`;
 
@@ -267,100 +181,51 @@ export class OptiFlowGrpcSDK {
                 options.meta as Record<string, string>
               );
               options.meta = meta;
-              const isDebug = isDynamicDebugActive(meta);
-
-              if (isDebug) {
-                if (isBrowser) {
-                  console.groupCollapsed(
-                    `%c[gRPC REQ] ${serviceMethod}`,
-                    'color: #2563eb; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dbeafe;'
-                  );
-                  console.log('Payload:', input);
-                  console.log('Headers/Metadata:', options.meta);
-                  console.groupEnd();
-                } else {
-                  console.log(
-                    `\n${ANSI.bgBlue} gRPC REQ ${ANSI.reset} ${ANSI.cyan}${serviceMethod}${ANSI.reset} ${ANSI.dim}[${new Date().toLocaleTimeString()}]${ANSI.reset}\n` +
-                      `${ANSI.blue}► Payload:${ANSI.reset} ${formatLogPayload(input)}\n` +
-                      `${ANSI.dim}► Headers/Meta:${ANSI.reset} ${formatLogPayload(options.meta)}`
-                  );
-                }
-              }
 
               const call = next(method, input, options);
 
               call.response.then(
                 (res) => {
                   const duration = Date.now() - startTime;
-                  if (isDebug) {
-                    if (isBrowser) {
-                      console.groupCollapsed(
-                        `%c[gRPC RES] ${serviceMethod} (+${duration}ms)`,
-                        'color: #16a34a; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dcfce7;'
+                  const resObj = res as {
+                    items?: unknown[];
+                    success?: boolean;
+                    errorMessage?: string;
+                    message?: string;
+                  } | null | undefined;
+
+                  // Tự động phân loại case theo quy chuẩn Google Cloud Logging
+                  if (
+                    !resObj ||
+                    (Array.isArray(resObj.items) && resObj.items.length === 0) ||
+                    resObj.success === false
+                  ) {
+                    if (resObj && resObj.success === false) {
+                      const reason =
+                        resObj.errorMessage || resObj.message || 'Unknown';
+                      glog.error(
+                        `${serviceMethod} Grpc Business Error | Method: ${serviceMethod} | Reason: ${reason} | Latency: ${duration}ms | Payload: ${formatSingleLine(input)}`
                       );
-                      console.log('Response:', res);
-                      console.groupEnd();
                     } else {
-                      console.log(
-                        `\n${ANSI.bgGreen} gRPC RES ${ANSI.reset} ${ANSI.green}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
-                          `${ANSI.green}► Response:${ANSI.reset} ${formatLogPayload(res)}\n`
+                      glog.warn(
+                        `${serviceMethod} Grpc Data: null | Method: ${serviceMethod} | Latency: ${duration}ms | Payload: ${formatSingleLine(input)}`
                       );
                     }
+                  } else {
+                    const count = Array.isArray(resObj.items)
+                      ? ` | Total: ${resObj.items.length}`
+                      : '';
+                    glog.info(
+                      `${serviceMethod} Grpc Success | Method: ${serviceMethod} | Latency: ${duration}ms${count}`
+                    );
                   }
                 },
                 (err) => {
                   const duration = Date.now() - startTime;
-                  if (isDebug) {
-                    const isHalted =
-                      err instanceof RpcError &&
-                      (err.message.toLowerCase().includes('halted') ||
-                        err.code === 'UNAVAILABLE' ||
-                        (err.meta &&
-                          Object.values(err.meta).some(
-                            (val) =>
-                              typeof val === 'string' &&
-                              val.toLowerCase().includes('halted')
-                          )));
-
-                    if (isBrowser) {
-                      console.group(
-                        `%c[gRPC ERR] ${serviceMethod} (+${duration}ms)`,
-                        'color: #dc2626; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #fee2e2;'
-                      );
-                      if (err instanceof RpcError) {
-                        console.error('Error Code:', err.code);
-                        console.error('Error Message:', err.message);
-                        console.error('Metadata:', err.meta);
-                      } else {
-                        console.error(err);
-                      }
-                      console.groupEnd();
-                    } else {
-                      if (err instanceof RpcError) {
-                        if (isHalted) {
-                          console.error(
-                            `\n${ANSI.bgRed} 🔴 gRPC HALTED ${ANSI.reset} ${ANSI.red}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
-                              `${ANSI.red}► Code:${ANSI.reset} ${err.code}\n` +
-                              `${ANSI.red}► Message:${ANSI.reset} ${err.message}\n` +
-                              `${ANSI.dim}► Meta:${ANSI.reset} ${formatLogPayload(err.meta)}\n`
-                          );
-                        } else {
-                          console.error(
-                            `\n${ANSI.bgRed} gRPC ERR ${ANSI.reset} ${ANSI.red}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
-                              `${ANSI.red}► Code:${ANSI.reset} ${err.code}\n` +
-                              `${ANSI.red}► Message:${ANSI.reset} ${err.message}\n` +
-                              `${ANSI.dim}► Meta:${ANSI.reset} ${formatLogPayload(err.meta)}\n`
-                          );
-                        }
-                      } else {
-                        console.error(
-                          `\n${ANSI.bgRed} gRPC ERR ${ANSI.reset} ${ANSI.red}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
-                            `${ANSI.red}► Error:${ANSI.reset}`,
-                          err
-                        );
-                      }
-                    }
-                  }
+                  handleGrpcError(serviceMethod, err, {
+                    payload: input,
+                    latency: `${duration}ms`,
+                  });
                 }
               );
 

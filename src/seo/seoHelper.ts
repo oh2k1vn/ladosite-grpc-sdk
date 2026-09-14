@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { type OptiFlowGrpcSDK } from '../client';
+import { glog, formatSingleLine } from '../logger';
 import type {
   SeoGlobalConfigData,
   SeoGlobalConfigResponse,
@@ -35,6 +36,18 @@ export interface FetchSeoOptions {
    * Tiêu đề dự phòng khi API SEO lỗi hoặc chưa có dữ liệu.
    */
   fallbackTitle?: string;
+  /**
+   * Tùy chọn truyền Domain chính thức để override và chuẩn hóa Canonical URL.
+   */
+  domain?: string;
+  /**
+   * Tùy chọn Next.js Metadata để override thủ công các trường cụ thể.
+   */
+  overrides?: Partial<Metadata>;
+  /**
+   * Request object trong Server Component / Route Handler của Next.js (nếu có).
+   */
+  request?: Request;
 }
 
 export interface FetchSeoDataResult {
@@ -43,9 +56,10 @@ export interface FetchSeoDataResult {
   metadata: Metadata;
 }
 
+// In-memory cache cho Global SEO Data (giảm tải gọi lặp lại trong cùng server process)
 let cachedGlobalData: SeoGlobalConfigData | undefined = undefined;
 let globalDataCacheTimestamp = 0;
-const GLOBAL_SEO_CACHE_TTL = 10 * 60 * 1000; // 10 phút memory cache
+const GLOBAL_SEO_CACHE_TTL = 60 * 1000; // Cache 1 phút
 
 /**
  * Xóa cache Global SEO trong bộ nhớ SDK
@@ -68,7 +82,7 @@ export async function fetchSeoMetadata(
 
 /**
  * Tự động hóa fetch đầy đủ dữ liệu SEO (Global + Page + Metadata) từ gRPC SDK.
- * Có sẵn bộ nhớ cache (TTL 10 phút) cho Global SEO để giảm tải gRPC request.
+ * Có sẵn bộ nhớ cache (TTL 1 phút) cho Global SEO để giảm tải gRPC request.
  * Bọc try-catch tuyệt đối an toàn, chạy bất đồng bộ song song (Promise.allSettled) để tối ưu tốc độ.
  */
 export async function fetchSeoData(
@@ -84,13 +98,19 @@ export async function fetchSeoData(
       ? options.page.data
       : (options.page as SeoPageConfigData | undefined);
 
-  const { sdk, url, fallbackTitle } = options;
+  const { sdk, url, request, fallbackTitle, overrides } = options;
   const seoClient = options.seoClient || sdk?.seo;
 
-  if (seoClient) {
-    const promises: Promise<void>[] = [];
+  const resolvedUrl = resolvePublicUrl(
+    url,
+    request,
+    options.domain || globalData?.domain
+  ).targetUrl;
 
-    // 1. Tự động fetch Global SEO song song nếu chưa có (Có kiểm tra TTL Memory Cache)
+  if (seoClient) {
+    const promises: Promise<unknown>[] = [];
+
+    // 1. Tự động fetch Global SEO song song nếu chưa có
     if (!globalData) {
       const isCacheValid =
         cachedGlobalData &&
@@ -110,9 +130,8 @@ export async function fetchSeoData(
               }
             })
             .catch((err) => {
-              console.warn(
-                '[OptiFlow SDK] GetGlobalConfig SEO failed safely:',
-                err
+              glog.warn(
+                `[OptiFlow SDK] GetGlobalConfig SEO failed safely | Detail: ${formatSingleLine(err)}`
               );
               if (cachedGlobalData) {
                 globalData = cachedGlobalData;
@@ -123,19 +142,19 @@ export async function fetchSeoData(
     }
 
     // 2. Tự động fetch Page SEO song song bằng URL nếu chưa có
-    if (url && !pageData) {
+    const targetUrlForFetch = resolvedUrl || url;
+    if (targetUrlForFetch && !pageData) {
       promises.push(
         seoClient
-          .getMetaByUrl({ url })
+          .getMetaByUrl({ url: targetUrlForFetch })
           .then((res) => {
             if (res?.success && res.data) {
               pageData = res.data;
             }
           })
           .catch((err) => {
-            console.warn(
-              `[OptiFlow SDK] GetMetaByUrl SEO failed safely for URL (${url}):`,
-              err
+            glog.warn(
+              `[OptiFlow SDK] GetMetaByUrl SEO failed safely for URL (${targetUrlForFetch}) | Detail: ${formatSingleLine(err)}`
             );
           })
       );
@@ -152,6 +171,13 @@ export async function fetchSeoData(
     global: globalData,
     page: pageData,
   });
+
+  if (overrides) {
+    metadata = {
+      ...metadata,
+      ...overrides,
+    };
+  }
 
   // Fallback title nếu không có dữ liệu SEO nào và có fallbackTitle truyền vào
   if ((!metadata || Object.keys(metadata).length === 0) && fallbackTitle) {
@@ -312,9 +338,8 @@ export async function fetchRobotsTxt(
         }
       }
     } catch (err) {
-      console.warn(
-        '[OptiFlow SDK] GetGlobalConfig for Robots.txt failed safely:',
-        err
+      glog.warn(
+        `[OptiFlow SDK] GetGlobalConfig for Robots.txt failed safely | Detail: ${formatSingleLine(err)}`
       );
     }
   }
@@ -415,7 +440,9 @@ export async function fetchSitemapXml(
     }
     return res?.xmlContent || '';
   } catch (err: unknown) {
-    console.warn('[OptiFlow SDK] GetSitemapData failed safely:', err);
+    glog.warn(
+      `[OptiFlow SDK] GetSitemapData failed safely | Detail: ${formatSingleLine(err)}`
+    );
     return '';
   }
 }

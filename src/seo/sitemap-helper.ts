@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { glog, formatSingleLine } from '../logger';
 
 export interface SitemapFetcherParams {
   url: string;
@@ -96,7 +97,9 @@ export async function handleDynamicSitemap({
       },
     });
   } catch (error) {
-    console.error('[SEO Sitemap Error] Failed to fetch sitemap:', error);
+    glog.error(
+      `[SEO Sitemap Error] Failed to fetch sitemap | TargetUrl: ${targetUrl} | Detail: ${formatSingleLine(error)}`
+    );
     // Trả về 500 để Googlebot xếp lịch re-crawl lại sau
     return new Response('Internal Server Error', { status: 500 });
   }

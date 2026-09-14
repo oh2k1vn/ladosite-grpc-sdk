@@ -1,6 +1,7 @@
 // Core SDK Client & Lỗi gRPC
 export { OptiFlowGrpcSDK, GrpcSDKConfig, grpcSDK, RpcError, WrappedClient } from './client';
 export * from './criteria';
+export * from './logger';
 
 // Type của Wrapped Clients
 export type * from './generated/wrapped-clients';
