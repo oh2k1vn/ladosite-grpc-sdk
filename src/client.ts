@@ -107,6 +107,37 @@ function generateChecksum(
   }
 }
 
+const ANSI = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  blue: '\x1b[34m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  cyan: '\x1b[36m',
+  magenta: '\x1b[35m',
+  bgBlue: '\x1b[44m\x1b[97m\x1b[1m',
+  bgGreen: '\x1b[42m\x1b[30m\x1b[1m',
+  bgRed: '\x1b[41m\x1b[97m\x1b[1m',
+  bgYellow: '\x1b[43m\x1b[30m\x1b[1m',
+};
+
+function formatLogPayload(data: unknown): string {
+  if (data === undefined || data === null) {
+    return String(data);
+  }
+  try {
+    return JSON.stringify(
+      data,
+      (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
+      2
+    );
+  } catch {
+    return String(data);
+  }
+}
+
 export interface GrpcSDKConfig {
   baseUrl?: string;
   orgId: string;
@@ -142,7 +173,16 @@ export class OptiFlowGrpcSDK {
   constructor(config: GrpcSDKConfig) {
     this.config = config;
     const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
-    const isDebug = config.debug !== false;
+    const envDebug =
+      typeof process !== 'undefined' &&
+      (process.env.OPTIFLOW_DEBUG === 'true' ||
+        process.env.OPTIFLOW_DEBUG === '1' ||
+        process.env.DEBUG === 'optiflow:*' ||
+        process.env.DEBUG === '*');
+    const isDebug =
+      typeof config.debug === 'boolean'
+        ? config.debug
+        : (envDebug || config.debug !== false);
 
     if (typeof config.token === 'function') {
       this.tokenGetter = config.token;
@@ -158,6 +198,8 @@ export class OptiFlowGrpcSDK {
         {
           interceptUnary(next, method, input, options) {
             const isBrowser = typeof window !== 'undefined';
+            const startTime = Date.now();
+            const serviceMethod = `${method.service.typeName}/${method.name}`;
 
             const callPromise = (async () => {
               const meta = await self.getRequestMetadataAsync(
@@ -168,7 +210,7 @@ export class OptiFlowGrpcSDK {
               if (isDebug) {
                 if (isBrowser) {
                   console.groupCollapsed(
-                    `%c[gRPC REQ] ${method.service.typeName}/${method.name}`,
+                    `%c[gRPC REQ] ${serviceMethod}`,
                     'color: #2563eb; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dbeafe;'
                   );
                   console.log('Payload:', input);
@@ -176,8 +218,9 @@ export class OptiFlowGrpcSDK {
                   console.groupEnd();
                 } else {
                   console.log(
-                    `[gRPC REQ] ${method.service.typeName}/${method.name}`,
-                    input
+                    `\n${ANSI.bgBlue} gRPC REQ ${ANSI.reset} ${ANSI.cyan}${serviceMethod}${ANSI.reset} ${ANSI.dim}[${new Date().toLocaleTimeString()}]${ANSI.reset}\n` +
+                      `${ANSI.blue}► Payload:${ANSI.reset} ${formatLogPayload(input)}\n` +
+                      `${ANSI.dim}► Headers/Meta:${ANSI.reset} ${formatLogPayload(options.meta)}`
                   );
                 }
               }
@@ -186,23 +229,25 @@ export class OptiFlowGrpcSDK {
 
               call.response.then(
                 (res) => {
+                  const duration = Date.now() - startTime;
                   if (isDebug) {
                     if (isBrowser) {
                       console.groupCollapsed(
-                        `%c[gRPC RES] ${method.service.typeName}/${method.name}`,
+                        `%c[gRPC RES] ${serviceMethod} (+${duration}ms)`,
                         'color: #16a34a; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #dcfce7;'
                       );
                       console.log('Response:', res);
                       console.groupEnd();
                     } else {
                       console.log(
-                        `[gRPC RES] ${method.service.typeName}/${method.name}`,
-                        res
+                        `\n${ANSI.bgGreen} gRPC RES ${ANSI.reset} ${ANSI.green}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
+                          `${ANSI.green}► Response:${ANSI.reset} ${formatLogPayload(res)}\n`
                       );
                     }
                   }
                 },
                 (err) => {
+                  const duration = Date.now() - startTime;
                   if (isDebug) {
                     const isHalted =
                       err instanceof RpcError &&
@@ -217,7 +262,7 @@ export class OptiFlowGrpcSDK {
 
                     if (isBrowser) {
                       console.group(
-                        `%c[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                        `%c[gRPC ERR] ${serviceMethod} (+${duration}ms)`,
                         'color: #dc2626; font-weight: bold; padding: 2px 4px; border-radius: 3px; background: #fee2e2;'
                       );
                       if (err instanceof RpcError) {
@@ -232,25 +277,23 @@ export class OptiFlowGrpcSDK {
                       if (err instanceof RpcError) {
                         if (isHalted) {
                           console.error(
-                            `🔴 [gRPC HALTED ERROR] ${method.service.typeName}/${method.name}\n` +
-                              `Code: ${err.code}\n` +
-                              `Message: ${err.message}\n` +
-                              `Meta:`,
-                            err.meta
+                            `\n${ANSI.bgRed} 🔴 gRPC HALTED ${ANSI.reset} ${ANSI.red}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
+                              `${ANSI.red}► Code:${ANSI.reset} ${err.code}\n` +
+                              `${ANSI.red}► Message:${ANSI.reset} ${err.message}\n` +
+                              `${ANSI.dim}► Meta:${ANSI.reset} ${formatLogPayload(err.meta)}\n`
                           );
                         } else {
                           console.error(
-                            `[gRPC ERR] ${method.service.typeName}/${method.name}`,
-                            {
-                              code: err.code,
-                              message: err.message,
-                              meta: err.meta,
-                            }
+                            `\n${ANSI.bgRed} gRPC ERR ${ANSI.reset} ${ANSI.red}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
+                              `${ANSI.red}► Code:${ANSI.reset} ${err.code}\n` +
+                              `${ANSI.red}► Message:${ANSI.reset} ${err.message}\n` +
+                              `${ANSI.dim}► Meta:${ANSI.reset} ${formatLogPayload(err.meta)}\n`
                           );
                         }
                       } else {
                         console.error(
-                          `[gRPC ERR] ${method.service.typeName}/${method.name}`,
+                          `\n${ANSI.bgRed} gRPC ERR ${ANSI.reset} ${ANSI.red}${serviceMethod}${ANSI.reset} ${ANSI.yellow}(+${duration}ms)${ANSI.reset}\n` +
+                            `${ANSI.red}► Error:${ANSI.reset}`,
                           err
                         );
                       }
