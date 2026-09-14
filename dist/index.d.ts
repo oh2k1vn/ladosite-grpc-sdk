@@ -3324,7 +3324,6 @@ interface GrpcSDKConfig {
     displayName?: string;
     userAgent?: string;
     publicKey?: string;
-    debug?: boolean;
     token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
 }
 type WrappedClient<T, _M = Record<string, unknown>> = T;

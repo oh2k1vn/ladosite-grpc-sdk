@@ -138,6 +138,78 @@ function formatLogPayload(data: unknown): string {
   }
 }
 
+function isDynamicDebugActive(meta?: Record<string, string>): boolean {
+  // 1. Browser check: URL Query Param (?debug=true hoặc ?debug=1)
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('debug') === 'true' || params.get('debug') === '1') {
+        return true;
+      }
+    } catch {
+      // Ignore error in non-standard browser/mock environments
+    }
+  }
+
+  // 2. Metadata / Header check (x-debug, debug, referer chứa ?debug=true)
+  if (meta) {
+    if (
+      meta['x-debug'] === 'true' ||
+      meta['x-debug'] === '1' ||
+      meta.debug === 'true' ||
+      meta.debug === '1'
+    ) {
+      return true;
+    }
+
+    const referer = meta.referer || meta.Referer;
+    if (
+      typeof referer === 'string' &&
+      (referer.includes('debug=true') || referer.includes('debug=1'))
+    ) {
+      return true;
+    }
+
+    const xUrl = meta['x-url'] || meta['x-forwarded-uri'] || meta['x-matched-path'];
+    if (
+      typeof xUrl === 'string' &&
+      (xUrl.includes('debug=true') || xUrl.includes('debug=1'))
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Next.js Server check (tự động đọc referer/header từ context request nếu chạy trên Server)
+  if (typeof window === 'undefined') {
+    try {
+      const req = typeof eval !== 'undefined' ? eval('require') : null;
+      if (typeof req === 'function') {
+        const nextHeaders = req('next/headers');
+        if (nextHeaders && typeof nextHeaders.headers === 'function') {
+          const h = nextHeaders.headers();
+          if (h && typeof h.get === 'function') {
+            const referer = h.get('referer');
+            if (
+              referer &&
+              (referer.includes('debug=true') || referer.includes('debug=1'))
+            ) {
+              return true;
+            }
+            const xDebug = h.get('x-debug') || h.get('debug');
+            if (xDebug === 'true' || xDebug === '1') {
+              return true;
+            }
+          }
+        }
+      }
+    } catch {
+      // Bỏ qua nếu không chạy trong request context của Next.js
+    }
+  }
+
+  return false;
+}
+
 export interface GrpcSDKConfig {
   baseUrl?: string;
   orgId: string;
@@ -146,7 +218,6 @@ export interface GrpcSDKConfig {
   displayName?: string;
   userAgent?: string;
   publicKey?: string;
-  debug?: boolean;
   token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
 }
 
@@ -173,16 +244,6 @@ export class OptiFlowGrpcSDK {
   constructor(config: GrpcSDKConfig) {
     this.config = config;
     const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
-    const envDebug =
-      typeof process !== 'undefined' &&
-      (process.env.OPTIFLOW_DEBUG === 'true' ||
-        process.env.OPTIFLOW_DEBUG === '1' ||
-        process.env.DEBUG === 'optiflow:*' ||
-        process.env.DEBUG === '*');
-    const isDebug =
-      typeof config.debug === 'boolean'
-        ? config.debug
-        : (envDebug || config.debug !== false);
 
     if (typeof config.token === 'function') {
       this.tokenGetter = config.token;
@@ -206,6 +267,7 @@ export class OptiFlowGrpcSDK {
                 options.meta as Record<string, string>
               );
               options.meta = meta;
+              const isDebug = isDynamicDebugActive(meta);
 
               if (isDebug) {
                 if (isBrowser) {

@@ -16122,6 +16122,53 @@ function formatLogPayload(data) {
     return String(data);
   }
 }
+function isDynamicDebugActive(meta) {
+  if (typeof window !== "undefined" && window.location) {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("debug") === "true" || params.get("debug") === "1") {
+        return true;
+      }
+    } catch {
+    }
+  }
+  if (meta) {
+    if (meta["x-debug"] === "true" || meta["x-debug"] === "1" || meta.debug === "true" || meta.debug === "1") {
+      return true;
+    }
+    const referer = meta.referer || meta.Referer;
+    if (typeof referer === "string" && (referer.includes("debug=true") || referer.includes("debug=1"))) {
+      return true;
+    }
+    const xUrl = meta["x-url"] || meta["x-forwarded-uri"] || meta["x-matched-path"];
+    if (typeof xUrl === "string" && (xUrl.includes("debug=true") || xUrl.includes("debug=1"))) {
+      return true;
+    }
+  }
+  if (typeof window === "undefined") {
+    try {
+      const req = typeof eval !== "undefined" ? eval("require") : null;
+      if (typeof req === "function") {
+        const nextHeaders = req("next/headers");
+        if (nextHeaders && typeof nextHeaders.headers === "function") {
+          const h = nextHeaders.headers();
+          if (h && typeof h.get === "function") {
+            const referer = h.get("referer");
+            if (referer && (referer.includes("debug=true") || referer.includes("debug=1"))) {
+              return true;
+            }
+            const xDebug = h.get("x-debug") || h.get("debug");
+            if (xDebug === "true" || xDebug === "1") {
+              return true;
+            }
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  return false;
+}
 var OptiFlowGrpcSDK = class {
   transport;
   config;
@@ -16140,8 +16187,6 @@ var OptiFlowGrpcSDK = class {
   constructor(config) {
     this.config = config;
     const baseUrl = config.baseUrl || "https://grpc.optiflow.vn";
-    const envDebug = typeof process !== "undefined" && (process.env.OPTIFLOW_DEBUG === "true" || process.env.OPTIFLOW_DEBUG === "1" || process.env.DEBUG === "optiflow:*" || process.env.DEBUG === "*");
-    const isDebug = typeof config.debug === "boolean" ? config.debug : envDebug || config.debug !== false;
     if (typeof config.token === "function") {
       this.tokenGetter = config.token;
     } else if (typeof config.token === "string") {
@@ -16157,10 +16202,11 @@ var OptiFlowGrpcSDK = class {
             const startTime = Date.now();
             const serviceMethod = `${method.service.typeName}/${method.name}`;
             const callPromise = (async () => {
-              const meta = await self.getRequestMetadataAsync(
+              const meta2 = await self.getRequestMetadataAsync(
                 options.meta
               );
-              options.meta = meta;
+              options.meta = meta2;
+              const isDebug = isDynamicDebugActive(meta2);
               if (isDebug) {
                 if (isBrowser) {
                   console.groupCollapsed(
@@ -16336,7 +16382,7 @@ ${ANSI.red}\u25BA Error:${ANSI.reset}`,
    */
   getRequestMetadata(extraMeta) {
     const publicKey = this.config.publicKey || DEFAULT_PUBLIC_KEY;
-    const meta = {
+    const meta2 = {
       checksum: generateChecksum(publicKey),
       "x-org": this.config.orgId,
       "x-requested-at": Date.now().toString(),
@@ -16346,7 +16392,7 @@ ${ANSI.red}\u25BA Error:${ANSI.reset}`,
       "user-agent": this.config.userAgent || DEFAULT_USER_AGENT,
       ...extraMeta
     };
-    if (!meta.authorization && !meta.Authorization) {
+    if (!meta2.authorization && !meta2.Authorization) {
       let activeToken = this.token;
       if (this.tokenGetter) {
         const res = this.tokenGetter();
@@ -16357,23 +16403,23 @@ ${ANSI.red}\u25BA Error:${ANSI.reset}`,
         }
       }
       if (activeToken) {
-        meta.authorization = `Bearer ${activeToken}`;
+        meta2.authorization = `Bearer ${activeToken}`;
       }
     }
-    return meta;
+    return meta2;
   }
   /**
    * Returns the header/metadata configuration object asynchronously, resolving tokenGetter if it returns a Promise.
    */
   async getRequestMetadataAsync(extraMeta) {
-    const meta = this.getRequestMetadata(extraMeta);
-    if (!meta.authorization && !meta.Authorization && this.tokenGetter) {
+    const meta2 = this.getRequestMetadata(extraMeta);
+    if (!meta2.authorization && !meta2.Authorization && this.tokenGetter) {
       const res = await this.tokenGetter();
       if (typeof res === "string" && res) {
-        meta.authorization = `Bearer ${res}`;
+        meta2.authorization = `Bearer ${res}`;
       }
     }
-    return meta;
+    return meta2;
   }
 };
 var grpcSDK = (config) => new OptiFlowGrpcSDK(config);
