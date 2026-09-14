@@ -1,3 +1,4 @@
+import * as nodeCrypto from 'node:crypto';
 import { GrpcWebFetchTransport } from '@protobuf-ts/grpcweb-transport';
 import { RpcError, UnaryCall, type RpcMetadata } from '@protobuf-ts/runtime-rpc';
 
@@ -54,40 +55,19 @@ const DEFAULT_USER_AGENT =
   (typeof process !== 'undefined' && process.env.OPTIFLOW_USER_AGENT) ||
   'QA-Bot';
 
-let cachedChecksum: string | null = null;
-
-/**
- * Safely loads Node.js crypto module only when running in Node.js environment
- * to prevent bundler errors and runtime crashes in browser environments.
- */
-function getNodeCrypto(): typeof import('node:crypto') | null {
-  if (typeof window !== 'undefined') {
-    return null;
-  }
-  try {
-    const req = typeof eval !== 'undefined' ? eval('require') : null;
-    if (typeof req === 'function') {
-      return req('crypto');
-    }
-  } catch {
-    // Ignore error in non-Node environments
-  }
-  return null;
-}
+const checksumCache = new Map<string, string>();
 
 function generateChecksum(
   publicKey: string = DEFAULT_PUBLIC_KEY,
   values: string = 'web:optiflow_svc'
 ): string {
-  if (
-    cachedChecksum &&
-    publicKey === DEFAULT_PUBLIC_KEY &&
-    values === 'web:optiflow_svc'
-  ) {
-    return cachedChecksum;
+  const cacheKey = `${publicKey}:${values}`;
+  const hit = checksumCache.get(cacheKey);
+  if (hit) {
+    return hit;
   }
+
   try {
-    const nodeCrypto = getNodeCrypto();
     if (!nodeCrypto || typeof nodeCrypto.publicEncrypt !== 'function') {
       return '';
     }
@@ -105,9 +85,7 @@ function generateChecksum(
     );
 
     const result = encryptedBuffer.toString('base64');
-    if (publicKey === DEFAULT_PUBLIC_KEY && values === 'web:optiflow_svc') {
-      cachedChecksum = result;
-    }
+    checksumCache.set(cacheKey, result);
     return result;
   } catch (error) {
     glog.error(`[gRPC Client] Checksum generation failed | Detail: ${formatSingleLine(error)}`);
@@ -115,19 +93,35 @@ function generateChecksum(
   }
 }
 
+const formatBearerToken = (token: string): string => {
+  const trimmed = token.trim();
+  return trimmed.startsWith('Bearer ') ? trimmed : `Bearer ${trimmed}`;
+};
+
 export interface GrpcSDKConfig {
+  /**
+   * Mã định danh tổ chức (tùy chọn nếu đã cấu hình biến môi trường OPTIFLOW_ORG_ID)
+   */
+  orgId?: string;
+  /**
+   * URL endpoint gRPC Gateway (mặc định: OPTIFLOW_GRPC_URL hoặc 'https://grpc.optiflow.vn')
+   */
   baseUrl?: string;
-  orgId: string;
+  /**
+   * Token xác thực: Chuỗi tĩnh hoặc Hàm getter (sync / async) lấy token theo từng request (Next.js cookies, session, ...)
+   */
+  token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
+  /**
+   * Cấu hình Google Cloud Logger cho SDK (hoặc boolean bật/tắt log)
+   */
+  logging?: GLogConfig | boolean;
+
+  // Cấu hình nâng cao (Tự động fallback về biến môi trường nếu không truyền)
   userName?: string;
   userId?: string;
   displayName?: string;
   userAgent?: string;
   publicKey?: string;
-  token?: string | (() => string | null | undefined | Promise<string | null | undefined>);
-  /**
-   * Cấu hình Google Cloud Logger cho SDK (hoặc boolean bật/tắt)
-   */
-  logging?: GLogConfig | boolean;
 }
 
 // Legacy type alias for backward-compatibility
@@ -150,9 +144,15 @@ export class OptiFlowGrpcSDK {
   public readonly tracking: WrappedTrackingServiceClient;
   public readonly userSubmit: WrappedUserSubmitServiceClient;
 
-  constructor(config: GrpcSDKConfig) {
+  constructor(config: GrpcSDKConfig = {}) {
     this.config = config;
-    const baseUrl = config.baseUrl || 'https://grpc.optiflow.vn';
+    const baseUrl =
+      config.baseUrl ||
+      (typeof process !== 'undefined' &&
+        (process.env.OPTIFLOW_GRPC_URL ||
+          process.env.NEXT_PUBLIC_OPTIFLOW_GRPC_URL ||
+          process.env.OPTIFLOW_BASE_URL)) ||
+      'https://grpc.optiflow.vn';
 
     if (config.logging === false) {
       configureGLog({ enableConsole: false, enableRemote: false });
@@ -316,14 +316,17 @@ export class OptiFlowGrpcSDK {
   }
 
   /**
-   * Returns the header/metadata configuration object generated for API requests (synchronously).
-   * Maps to lines 134-143 configuration logic.
+   * Sinh object Metadata cơ bản (checksum, x-org, user-agent, timestamps)
    */
-  public getRequestMetadata(extraMeta?: Record<string, string>): Record<string, string> {
+  private getBaseMetadata(extraMeta?: Record<string, string>): Record<string, string> {
     const publicKey = this.config.publicKey || DEFAULT_PUBLIC_KEY;
-    const meta: Record<string, string> = {
+    return {
       checksum: generateChecksum(publicKey),
-      'x-org': this.config.orgId,
+      'x-org':
+        this.config.orgId ||
+        (typeof process !== 'undefined' &&
+          (process.env.OPTIFLOW_ORG_ID || process.env.NEXT_PUBLIC_OPTIFLOW_ORG_ID)) ||
+        '',
       'x-requested-at': Date.now().toString(),
       'x-user-name': this.config.userName || DEFAULT_USER_NAME,
       'x-userId': this.config.userId || DEFAULT_USER_ID,
@@ -331,19 +334,31 @@ export class OptiFlowGrpcSDK {
       'user-agent': this.config.userAgent || DEFAULT_USER_AGENT,
       ...extraMeta,
     };
+  }
 
-    if (!meta.authorization && !meta.Authorization) {
-      let activeToken = this.token;
-      if (this.tokenGetter) {
+  /**
+   * Returns the header/metadata configuration object generated for API requests (synchronously).
+   */
+  public getRequestMetadata(extraMeta?: Record<string, string>): Record<string, string> {
+    const meta = this.getBaseMetadata(extraMeta);
+
+    if (meta.authorization || meta.Authorization) {
+      return meta;
+    }
+
+    if (this.token) {
+      meta.authorization = formatBearerToken(this.token);
+      return meta;
+    }
+
+    if (this.tokenGetter) {
+      try {
         const res = this.tokenGetter();
-        if (typeof res === 'string') {
-          activeToken = res;
-        } else if (res === null || res === undefined) {
-          activeToken = null;
+        if (typeof res === 'string' && res.trim()) {
+          meta.authorization = formatBearerToken(res);
         }
-      }
-      if (activeToken) {
-        meta.authorization = `Bearer ${activeToken}`;
+      } catch {
+        // Ignore synchronous getter error
       }
     }
 
@@ -354,12 +369,30 @@ export class OptiFlowGrpcSDK {
    * Returns the header/metadata configuration object asynchronously, resolving tokenGetter if it returns a Promise.
    */
   public async getRequestMetadataAsync(extraMeta?: Record<string, string>): Promise<Record<string, string>> {
-    const meta = this.getRequestMetadata(extraMeta);
+    const meta = this.getBaseMetadata(extraMeta);
 
-    if (!meta.authorization && !meta.Authorization && this.tokenGetter) {
-      const res = await this.tokenGetter();
-      if (typeof res === 'string' && res) {
-        meta.authorization = `Bearer ${res}`;
+    if (meta.authorization || meta.Authorization) {
+      return meta;
+    }
+
+    if (this.token) {
+      meta.authorization = formatBearerToken(this.token);
+      return meta;
+    }
+
+    if (this.tokenGetter) {
+      try {
+        const res = this.tokenGetter();
+        const resolved =
+          res && typeof (res as Promise<unknown>).then === 'function'
+            ? await res
+            : res;
+
+        if (typeof resolved === 'string' && resolved.trim()) {
+          meta.authorization = formatBearerToken(resolved);
+        }
+      } catch (err) {
+        glog.warn(`[gRPC Client] Token getter error | Detail: ${formatSingleLine(err)}`);
       }
     }
 
@@ -370,5 +403,5 @@ export class OptiFlowGrpcSDK {
 /**
  * Helper factory function to instantiate the OptiFlow gRPC SDK without using 'new'
  */
-export const grpcSDK = (config: GrpcSDKConfig) => new OptiFlowGrpcSDK(config);
+export const grpcSDK = (config: GrpcSDKConfig = {}) => new OptiFlowGrpcSDK(config);
 
